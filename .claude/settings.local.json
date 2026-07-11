@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__replicate__search",
+      "mcp__replicate__get_models",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__replicate__create_predictions",
+      "Bash(mkdir -p /mnt/c/allsaas/superscalerai/validation/outputs)",
+      "Bash(curl -sL -o before.png \"https://replicate.delivery/pbxt/KiDB5iqtTcxiTI17WASotG1Ei0TNJCztdU6J02pnMYAd8B1X/13_before-4.png\")",
+      "Bash(curl -sL -o after.png \"https://replicate.delivery/yhqm/ANV52z8Wx8LgLhaoQ74300HFLFNRvTrD0n3mmijfMVKkm5bLA/831442-c072f5d2-7cb7-11f1-97c0-064dce7cc082.png\")",
+      "Bash(python3 -m py_compile validate.py)",
+      "Bash(env)",
+      "Bash(python3 -c \"import PIL; print\\('PIL', PIL.__version__\\)\")",
+      "Read(//home/igors/**)",
+      "Bash(python3 *)"
+    ]
+  }
+}

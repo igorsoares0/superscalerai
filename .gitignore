@@ -1,0 +1,11 @@
+.env
+*.env
+!.env.example
+__pycache__/
+*.pyc
+.venv*/
+dev.db
+storage/
+validation/outputs/
+validation/inputs/
+.pytest_cache/
