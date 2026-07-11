@@ -27,11 +27,10 @@ def feathered_mask(size: tuple[int, int], pad: int = 20, radius: int = 60, blur:
 
 
 class LocalEnhancers(PipelineStage):
-    name = "local_enhancers"
+    """Executes the ExecutionPlan's regions; which faces/regions qualify is
+    decided by the Planner, not here."""
 
-    # faces this small relative to the frame get destroyed by the
-    # generative pass and need zoom-and-enhance
-    SMALL_FACE_THRESHOLD = 0.15
+    name = "local_enhancers"
 
     def __init__(self, provider: AIProvider):
         self.provider = provider
@@ -46,9 +45,7 @@ class LocalEnhancers(PipelineStage):
             image = self._composite_protected(image, original, box, sx, sy)
 
         for box in plan.face_regions:
-            face_frac = (box[3] - box[1]) / original.height
-            if face_frac < self.SMALL_FACE_THRESHOLD:
-                image = await self._zoom_and_enhance(image, original, box, sx, sy, plan.seed)
+            image = await self._zoom_and_enhance(image, original, box, sx, sy, plan.seed)
         return image
 
     def _composite_protected(
