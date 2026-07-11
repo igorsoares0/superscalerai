@@ -817,9 +817,15 @@ GET /download/{id}
 
 Payments
 
+Provider: Paddle (Merchant of Record — handles global sales tax/VAT and
+invoicing, which matters for selling internationally from day one).
+
 ```
 POST /payments/webhook
 ```
+
+Webhook must verify Paddle's signature and be idempotent (webhooks arrive
+duplicated in practice).
 
 ---
 
