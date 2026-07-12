@@ -16,7 +16,8 @@
       "Bash(curl -sL -o app/pipeline/resources/face_detection_yunet_2023mar.onnx \"https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx\")",
       "Bash(export UV_PROJECT_ENVIRONMENT=.venv-wsl)",
       "Bash(uv add *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv run pytest -q)"
     ]
   }
 }

@@ -4,10 +4,11 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api import download, images, jobs
+from app.api import credits, download, images, jobs
 from app.auth import router as auth
 from app.database.models import Base, Job
 from app.database.session import engine
+from app.services import credits as credits_service
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,11 +24,13 @@ with Session(engine) as _db:
     for _job in stale:
         _job.status = "failed"
         _job.error_message = "interrupted by server restart"
+        credits_service.refund_job(_db, _job)
     _db.commit()
 
 app.include_router(auth.router)
 app.include_router(images.router)
 app.include_router(jobs.router)
+app.include_router(credits.router)
 app.include_router(download.router)
 
 

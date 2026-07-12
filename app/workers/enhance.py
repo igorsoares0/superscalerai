@@ -13,6 +13,7 @@ from PIL import Image
 from app.database.models import ImageRecord, Job
 from app.database.session import SessionLocal
 from app.pipeline.factory import build_pipeline
+from app.services import credits
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def run_enhancement(job_id: str) -> None:
             logger.exception("job %s failed", job_id)
             job.status = "failed"
             job.error_message = str(exc)
-            # TODO: refund credits on failure (SPEC.md: credit ledger)
+            credits.refund_job(db, job)
         finally:
             job.execution_time = time.monotonic() - start
             db.commit()

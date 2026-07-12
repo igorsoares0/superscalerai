@@ -49,10 +49,26 @@ class Job(Base):
     preset: Mapped[str] = mapped_column(String(32))
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # resolved ExecutionPlan
+    credits_cost: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     execution_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CreditLedger(Base):
+    """Append-only record of every credit movement. `users.credits` is the
+    denormalized balance; both are always written in the same transaction."""
+
+    __tablename__ = "credit_ledger"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    delta: Mapped[int] = mapped_column(Integer)  # negative = debit
+    reason: Mapped[str] = mapped_column(String(32))  # job_debit | job_refund | purchase | signup_bonus
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), nullable=True, index=True)
+    payment_id: Mapped[str | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

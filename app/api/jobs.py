@@ -8,6 +8,7 @@ from app.database.models import ImageRecord, Job, User
 from app.database.session import get_db
 from app.jobs.queue import enqueue_enhancement
 from app.pipeline.presets import PRESETS
+from app.services import credits
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -30,13 +31,18 @@ def create_job(
     image = db.get(ImageRecord, body.image_id)
     if image is None or image.user_id != user.id:
         raise HTTPException(404, "image not found")
-    # TODO: atomic credit debit + ledger entry before enqueueing
-
     job = Job(user_id=user.id, image_id=image.id, preset=body.preset, seed=body.seed, status="queued")
     db.add(job)
+    db.flush()  # assigns job.id for the ledger entry
+    cost = credits.job_cost(image.width, image.height)
+    try:
+        credits.debit_for_job(db, user, job, cost)
+    except credits.InsufficientCredits:
+        db.rollback()
+        raise HTTPException(402, f"insufficient credits: job needs {cost}")
     db.commit()
     enqueue_enhancement(job.id, background_tasks)
-    return {"id": job.id, "status": job.status}
+    return {"id": job.id, "status": job.status, "credits_cost": cost}
 
 
 @router.get("/{job_id}")
