@@ -48,6 +48,21 @@ async def upload_image(
     return {"id": row.id, "width": width, "height": height}
 
 
+@router.get("/{image_id}")
+def get_image(
+    image_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> dict:
+    row = db.get(ImageRecord, image_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(404, "image not found")
+    return {
+        "id": row.id,
+        "width": row.width,
+        "height": row.height,
+        "enhanced": row.enhanced_path is not None,
+    }
+
+
 @router.get("")
 def list_images(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)

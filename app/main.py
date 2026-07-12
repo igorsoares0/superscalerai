@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api import credits, download, images, jobs
 from app.auth import router as auth
+from app.auth import service as auth_service
 from app.database.models import Base, Job
 from app.database.session import engine
 from app.services import credits as credits_service
@@ -26,6 +27,7 @@ with Session(engine) as _db:
         _job.error_message = "interrupted by server restart"
         credits_service.refund_job(_db, _job)
     _db.commit()
+    auth_service.purge_expired_sessions(_db)
 
 app.include_router(auth.router)
 app.include_router(images.router)

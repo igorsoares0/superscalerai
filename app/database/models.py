@@ -27,6 +27,19 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AuthSession(Base):
+    """Server-side login session. The client holds the raw token in an
+    httponly cookie; we store only its SHA-256 so a DB leak can't hijack."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ImageRecord(Base):
     __tablename__ = "images"
 

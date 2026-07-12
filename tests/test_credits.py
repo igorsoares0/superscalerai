@@ -1,16 +1,11 @@
-import io
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-from PIL import Image
 
 from app.database.models import CreditLedger, ImageRecord, Job, User
 from app.database.session import SessionLocal
-from app.main import app
 from app.services import credits
-
-client = TestClient(app)
+from tests.conftest import png_bytes
 
 
 def test_job_cost_tiers():
@@ -68,30 +63,20 @@ def test_debit_insufficient_balance():
         assert user.credits == 1
 
 
-def test_job_creation_returns_402_without_credits():
-    buf = io.BytesIO()
-    Image.new("RGB", (64, 64), "salmon").save(buf, format="PNG")
-    r = client.post("/images/upload", files={"file": ("t.png", buf.getvalue(), "image/png")})
+def test_job_creation_returns_402_without_credits(client):
+    r = client.post("/images/upload", files={"file": ("t.png", png_bytes(), "image/png")})
     image_id = r.json()["id"]
 
     with SessionLocal() as db:
-        dev = db.query(User).filter_by(email="dev@localhost").one()
-        original = dev.credits
-        dev.credits = 0
+        db.query(User).filter_by(email=client.user_email).update({"credits": 0})
         db.commit()
 
-    try:
-        r = client.post("/jobs", json={"image_id": image_id, "preset": "portrait"})
-        assert r.status_code == 402
-    finally:
-        with SessionLocal() as db:
-            db.query(User).filter_by(email="dev@localhost").update({"credits": original})
-            db.commit()
+    r = client.post("/jobs", json={"image_id": image_id, "preset": "portrait"})
+    assert r.status_code == 402
 
 
-def test_credits_endpoint_reports_balance_and_ledger():
-    r = client.get("/credits")
-    assert r.status_code == 200
-    body = r.json()
-    assert isinstance(body["balance"], int)
-    assert isinstance(body["ledger"], list)
+def test_credits_endpoint_shows_signup_bonus(client):
+    body = client.get("/credits").json()
+    assert body["balance"] == 3
+    assert body["ledger"][0]["reason"] == "signup_bonus"
+    assert body["ledger"][0]["delta"] == 3
