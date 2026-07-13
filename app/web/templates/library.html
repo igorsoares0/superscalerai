@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}SuperScaler — Library{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-6xl px-6 py-10">
+  <h1 class="font-display text-3xl font-bold tracking-tight">Library</h1>
+  <p class="mt-1 text-sm text-mute">Every image you've uploaded. Click an enhanced one to compare.</p>
+
+  <div id="grid" class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"></div>
+
+  <div id="empty-state" class="mt-16 hidden flex-col items-center gap-3 text-center">
+    <p class="text-mute">Nothing here yet.</p>
+    <a href="/" class="rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85">Upscale your first image</a>
+  </div>
+</div>
+
+<!-- compare modal -->
+<div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-6" role="dialog" aria-modal="true" aria-label="Compare original and enhanced">
+  <div class="w-full max-w-4xl">
+    <div class="mb-3 flex items-center justify-between">
+      <span class="font-mono text-xs text-mute" id="modal-meta"></span>
+      <div class="flex items-center gap-3">
+        <a id="modal-download" href="#" class="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/85">Download</a>
+        <button id="modal-close" class="rounded-lg border border-line px-4 py-2 text-sm text-mute transition-colors hover:text-body">Close</button>
+      </div>
+    </div>
+    <div id="modal-compare" class="relative overflow-hidden rounded-2xl border border-line bg-black select-none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/library.js"></script>{% endblock %}

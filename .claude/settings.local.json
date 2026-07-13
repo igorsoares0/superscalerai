@@ -17,7 +17,10 @@
       "Bash(export UV_PROJECT_ENVIRONMENT=.venv-wsl)",
       "Bash(uv add *)",
       "Bash(uv run *)",
-      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv run pytest -q)"
+      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv run pytest -q)",
+      "Bash(curl -sL \"https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11\" -o /tmp/claude-1000/-mnt-c-allsaas-superscalerai/0fbc8a01-b227-4344-b893-f73e21b4cd62/scratchpad/tw.js)",
+      "Bash(openssl dgst *)",
+      "Bash(openssl base64 *)"
     ]
   }
 }

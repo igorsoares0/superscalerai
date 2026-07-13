@@ -1,6 +1,8 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,7 @@ from app.auth import router as auth
 from app.auth import service as auth_service
 from app.database.models import Base, Job
 from app.database.session import engine
+from app.web import router as web
 from app.services import credits as credits_service
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +37,8 @@ app.include_router(images.router)
 app.include_router(jobs.router)
 app.include_router(credits.router)
 app.include_router(download.router)
+app.include_router(web.router)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
 
 
 @app.get("/health")

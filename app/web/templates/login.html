@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SuperScaler — Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"
+          integrity="sha384-XXN6/S6yXj8EpXnBTw3JGR9ZM+hixGxFCLYn0FHtg9cWh0ziKmAgTPEhecbCDOmj"
+          crossorigin="anonymous"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-ink:    #0a0a0c;
+      --color-panel:  #131316;
+      --color-raise:  #1a1a20;
+      --color-line:   rgba(255,255,255,0.07);
+      --color-body:   #f0f0f3;
+      --color-mute:   #8d8d97;
+      --color-accent: #4b72ff;
+      --color-err:    #ff6161;
+      --font-display: "Space Grotesk", sans-serif;
+      --font-sans:    "Inter", system-ui, sans-serif;
+      --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body class="h-full bg-ink font-sans text-body antialiased">
+  <main class="flex min-h-full items-center justify-center px-6 py-12">
+    <div class="w-full max-w-sm">
+      <div class="mb-8 text-center">
+        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 font-display text-xl font-bold text-accent">S</div>
+        <h1 class="font-display text-2xl font-bold tracking-tight">SuperScaler</h1>
+        <p class="mt-1 text-sm text-mute">Generative upscaling for real photos.</p>
+      </div>
+
+      <div class="rounded-2xl border border-line bg-panel p-6">
+        <div class="mb-5 grid grid-cols-2 rounded-xl bg-ink p-1" role="tablist">
+          <button id="tab-login" role="tab" aria-selected="true" class="rounded-lg py-2 text-sm font-medium">Sign in</button>
+          <button id="tab-register" role="tab" aria-selected="false" class="rounded-lg py-2 text-sm font-medium text-mute">Create account</button>
+        </div>
+
+        <form id="auth-form" class="space-y-4">
+          <div>
+            <label for="email" class="mb-1.5 block text-xs font-medium text-mute">Email</label>
+            <input id="email" type="email" required autocomplete="email"
+              class="w-full rounded-xl border border-line bg-ink px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent">
+          </div>
+          <div>
+            <label for="password" class="mb-1.5 block text-xs font-medium text-mute">Password</label>
+            <input id="password" type="password" required minlength="8" autocomplete="current-password"
+              class="w-full rounded-xl border border-line bg-ink px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent">
+            <p id="password-hint" class="mt-1.5 hidden text-xs text-mute">At least 8 characters.</p>
+          </div>
+          <p id="auth-error" class="hidden text-sm text-err"></p>
+          <button id="submit-btn" type="submit"
+            class="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85 disabled:opacity-50">
+            Sign in
+          </button>
+        </form>
+      </div>
+
+      <p id="bonus-note" class="mt-4 hidden text-center font-mono text-xs text-mute">New accounts start with 3 free credits.</p>
+    </div>
+  </main>
+
+  <script>
+    const tabs = { login: document.getElementById("tab-login"), register: document.getElementById("tab-register") };
+    const form = document.getElementById("auth-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const errorEl = document.getElementById("auth-error");
+    let mode = "login";
+
+    function setMode(next) {
+      mode = next;
+      for (const [name, el] of Object.entries(tabs)) {
+        const active = name === mode;
+        el.setAttribute("aria-selected", String(active));
+        el.classList.toggle("bg-raise", active);
+        el.classList.toggle("text-mute", !active);
+      }
+      submitBtn.textContent = mode === "login" ? "Sign in" : "Create account";
+      document.getElementById("password-hint").classList.toggle("hidden", mode === "login");
+      document.getElementById("bonus-note").classList.toggle("hidden", mode === "login");
+      document.getElementById("password").autocomplete = mode === "login" ? "current-password" : "new-password";
+      errorEl.classList.add("hidden");
+    }
+    tabs.login.addEventListener("click", () => setMode("login"));
+    tabs.register.addEventListener("click", () => setMode("register"));
+    setMode("login");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      errorEl.classList.add("hidden");
+      try {
+        const r = await fetch(`/auth/${mode}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("email").value.trim(),
+            password: document.getElementById("password").value,
+          }),
+        });
+        if (r.ok) { location.href = "/"; return; }
+        const body = await r.json().catch(() => ({}));
+        errorEl.textContent =
+          r.status === 401 ? "Wrong email or password." :
+          r.status === 409 ? "This email already has an account. Try signing in." :
+          r.status === 422 ? "Enter a valid email and a password of at least 8 characters." :
+          (body.detail || "Something went wrong. Try again.");
+        errorEl.classList.remove("hidden");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
