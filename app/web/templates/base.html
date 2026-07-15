@@ -60,10 +60,16 @@
           <span class="font-display text-lg font-bold tracking-tight">SuperScaler</span>
           <span class="ml-3 hidden text-sm text-mute sm:inline" id="topbar-email"></span>
         </div>
-        <div class="flex items-center gap-2 rounded-full border border-line bg-panel px-4 py-1.5">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-          <span class="font-mono text-sm" id="credits-badge">—</span>
-          <span class="text-xs text-mute">credits</span>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 rounded-full border border-line bg-panel px-4 py-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            <span class="font-mono text-sm" id="credits-badge">—</span>
+            <span class="text-xs text-mute">credits</span>
+          </div>
+          <button id="buy-credits-btn"
+                  class="rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent/85">
+            Upgrade
+          </button>
         </div>
       </header>
 
@@ -73,7 +79,26 @@
     </div>
   </div>
 
+  <!-- buy credits modal -->
+  <div id="billing-modal" role="dialog" aria-modal="true" aria-labelledby="billing-title"
+       class="fixed inset-0 z-40 hidden items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-2xl border border-line bg-panel p-6">
+      <div class="mb-1 flex items-center justify-between">
+        <h2 id="billing-title" class="font-display text-lg font-bold">Choose your plan</h2>
+        <button id="billing-close" class="rounded-lg p-1 text-mute transition-colors hover:text-body" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="mb-5 text-sm text-mute">Your credits reset to the plan's allowance every month. 1 credit ≈ one small upscale.</p>
+      <div id="billing-packs" class="flex flex-col gap-3"></div>
+      <p id="billing-status" class="mt-4 hidden text-sm"></p>
+    </div>
+  </div>
+
+  <!-- Paddle.js must load from Paddle's CDN and is updated by them, so it can't be SRI-pinned -->
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js" defer></script>
   <script src="/static/app.js"></script>
+  <script src="/static/billing.js" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

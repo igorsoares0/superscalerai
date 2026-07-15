@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api import credits, download, images, jobs
+from app.api import billing, credits, download, images, jobs
 from app.auth import router as auth
 from app.auth import service as auth_service
 from app.database.models import Base, Job
@@ -36,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(images.router)
 app.include_router(jobs.router)
 app.include_router(credits.router)
+app.include_router(billing.router)
 app.include_router(download.router)
 app.include_router(web.router)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")

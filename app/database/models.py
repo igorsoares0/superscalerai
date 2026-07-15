@@ -24,6 +24,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     credits: Mapped[int] = mapped_column(Integer, default=0)
+    plan: Mapped[str | None] = mapped_column(String(16), nullable=True)  # basic | pro
+    paddle_subscription_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    plan_renews_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -86,11 +93,16 @@ class CreditLedger(Base):
 
 
 class Payment(Base):
+    """One row per settled provider transaction. The unique constraint on
+    provider_transaction_id is what makes webhook credit grants idempotent."""
+
     __tablename__ = "payments"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     credits: Mapped[int] = mapped_column(Integer)
     amount: Mapped[int] = mapped_column(Integer)  # cents
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
     provider: Mapped[str] = mapped_column(String(32))
+    provider_transaction_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
