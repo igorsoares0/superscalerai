@@ -124,6 +124,28 @@ def cancel_subscription(subscription_id: str) -> str | None:
     return change.get("effective_at")
 
 
+def change_subscription_plan(subscription_id: str, price_id: str, upgrade: bool) -> None:
+    """Swap the subscription to another price. Upgrades charge the prorated
+    difference right away — the resulting transaction.completed webhook flips
+    the plan and resets credits. Downgrades bill nothing until the next
+    renewal, so the user keeps what they paid for; the renewal transaction
+    carries the new price and resets credits then. Raises httpx.HTTPError on
+    API failure."""
+    base = PADDLE_API_BASE[settings.paddle_environment]
+    r = httpx.patch(
+        f"{base}/subscriptions/{subscription_id}",
+        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        json={
+            "items": [{"price_id": price_id, "quantity": 1}],
+            "proration_billing_mode": (
+                "prorated_immediately" if upgrade else "full_next_billing_period"
+            ),
+        },
+        timeout=15,
+    )
+    r.raise_for_status()
+
+
 def apply_renewal(
     db: Session,
     user: User,
@@ -162,6 +184,7 @@ def apply_renewal(
     user.paddle_subscription_id = subscription_id
     user.plan_renews_at = renews_at
     user.plan_cancels_at = None  # a settled charge means the plan is live
+    user.plan_pending = None  # the charge's price IS the plan now
     if delta != 0:
         db.add(
             CreditLedger(
@@ -181,3 +204,4 @@ def expire_subscription(db: Session, user: User) -> None:
     user.paddle_subscription_id = None
     user.plan_renews_at = None
     user.plan_cancels_at = None
+    user.plan_pending = None

@@ -102,7 +102,12 @@ def test_plans_listed(client):
     for plan in body["plans"]:
         assert plan["price_id"].startswith("pri_")
         assert plan["credits"] > 0 and plan["amount"] > 0
-    assert body["current"] == {"plan": None, "renews_at": None, "cancels_at": None}
+    assert body["current"] == {
+        "plan": None,
+        "renews_at": None,
+        "cancels_at": None,
+        "pending": None,
+    }
 
 
 # ---- webhook signature ----
@@ -243,7 +248,7 @@ def test_cancel_schedules_end_of_period(client, monkeypatch):
     # effective date arrives: the webhook expires everything, incl. cancels_at
     post_webhook(client, canceled_event(uid, subscription_id=sub))
     current = client.get("/billing/plans").json()["current"]
-    assert current == {"plan": None, "renews_at": None, "cancels_at": None}
+    assert current == {"plan": None, "renews_at": None, "cancels_at": None, "pending": None}
     assert client.get("/credits").json()["balance"] == 0
 
 
@@ -260,6 +265,110 @@ def test_cancel_paddle_error_leaves_plan_untouched(client, monkeypatch):
     assert client.post("/billing/cancel").status_code == 502
     current = client.get("/billing/plans").json()["current"]
     assert current["plan"] == "basic" and current["cancels_at"] is None
+
+
+# ---- plan switching ----
+
+PRO = 1000
+
+
+@pytest.fixture
+def paddle_change(monkeypatch):
+    """Capture change_subscription_plan calls instead of hitting Paddle."""
+    calls = []
+    monkeypatch.setattr(
+        billing, "change_subscription_plan", lambda sub, price, up: calls.append((sub, price, up))
+    )
+    return calls
+
+
+def test_change_requires_auth(anon_client):
+    assert anon_client.post("/billing/change", json={"plan": "pro"}).status_code == 401
+
+
+def test_change_without_subscription(client):
+    assert client.post("/billing/change", json={"plan": "pro"}).status_code == 400
+
+
+def test_change_to_unknown_plan(client):
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid))
+    assert client.post("/billing/change", json={"plan": "mega"}).status_code == 400
+
+
+def test_change_to_same_plan(client, paddle_change):
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid))
+    assert client.post("/billing/change", json={"plan": "basic"}).status_code == 400
+    assert paddle_change == []
+
+
+def test_upgrade_charges_now_and_webhook_resets(client, paddle_change):
+    uid = user_id_of(client)
+    sub = f"sub_{uuid.uuid4().hex[:26]}"
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    r = client.post("/billing/change", json={"plan": "pro"})
+    assert r.status_code == 200 and r.json()["status"] == "upgraded"
+    pro_price = next(p.price_id for p in billing.PLANS if p.slug == "pro")
+    assert paddle_change == [(sub, pro_price, True)]
+
+    # the prorated charge arrives as a normal transaction on the same sub
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+    assert client.get("/credits").json()["balance"] == PRO
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "pro" and current["pending"] is None
+
+
+def test_downgrade_waits_for_renewal(client, paddle_change):
+    uid = user_id_of(client)
+    sub = f"sub_{uuid.uuid4().hex[:26]}"
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+
+    r = client.post("/billing/change", json={"plan": "basic"})
+    assert r.status_code == 200 and r.json()["status"] == "scheduled"
+    basic_price = next(p.price_id for p in billing.PLANS if p.slug == "basic")
+    assert paddle_change == [(sub, basic_price, False)]
+
+    # nothing changes until renewal: credits and plan stay pro
+    assert client.get("/credits").json()["balance"] == PRO
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "pro" and current["pending"] == "basic"
+
+    # repeat click stays idempotent
+    assert client.post("/billing/change", json={"plan": "basic"}).json()["status"] == "scheduled"
+    assert len(paddle_change) == 1
+
+    # renewal carries the basic price: credits reset, pending cleared
+    post_webhook(client, completed_event(uid, plan="basic", credits=BASIC, subscription_id=sub))
+    assert client.get("/credits").json()["balance"] == BASIC
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "basic" and current["pending"] is None
+
+
+def test_change_blocked_after_cancel(client, paddle_change, monkeypatch):
+    monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid))
+    assert client.post("/billing/cancel").status_code == 200
+
+    assert client.post("/billing/change", json={"plan": "pro"}).status_code == 400
+    assert paddle_change == []
+
+
+def test_change_paddle_error_leaves_state_untouched(client, monkeypatch):
+    import httpx
+
+    def boom(sub, price, up):
+        raise httpx.HTTPError("paddle down")
+
+    monkeypatch.setattr(billing, "change_subscription_plan", boom)
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO))
+
+    assert client.post("/billing/change", json={"plan": "basic"}).status_code == 502
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "pro" and current["pending"] is None
 
 
 def test_other_apps_events_ignored(client):

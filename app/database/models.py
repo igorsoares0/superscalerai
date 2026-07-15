@@ -35,6 +35,8 @@ class User(Base):
     plan_cancels_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # downgrade scheduled for the next renewal (upgrades apply immediately)
+    plan_pending: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

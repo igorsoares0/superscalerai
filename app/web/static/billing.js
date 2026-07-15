@@ -129,10 +129,56 @@
         btn.querySelector('[data-pl="credits"]').textContent +=
           ` · ${cancels_at ? "ends" : "renews"} ${new Date(when).toLocaleDateString()}`;
       }
-    } else {
+    } else if (catalog.current.pending === plan.slug) {
+      btn.disabled = true;
+      btn.classList.add("opacity-60");
+      const badge = btn.querySelector('[data-pl="badge"]');
+      badge.textContent = "Starts next renewal";
+      badge.classList.remove("hidden");
+    } else if (catalog.current.cancels_at) {
+      btn.disabled = true; // plan is ending; subscribe again once it does
+      btn.classList.add("opacity-60");
+    } else if (!catalog.current.plan) {
       btn.addEventListener("click", () => checkout(plan));
+    } else {
+      let armed = false; // switching bills money or reschedules it: confirm on 2nd click
+      btn.addEventListener("click", () => (armed ? switchPlan(plan) : (armed = arm(plan, btn))));
     }
     return btn;
+  }
+
+  function isUpgrade(plan) {
+    const cur = catalog.plans.find((p) => p.slug === catalog.current.plan);
+    return !cur || plan.amount > cur.amount;
+  }
+
+  function arm(plan, btn) {
+    btn.querySelector('[data-pl="name"]').textContent = `Switch to ${plan.name} — click to confirm`;
+    setStatus(isUpgrade(plan)
+      ? "You'll be charged the prorated difference for the rest of this period right away."
+      : "No charge now — the new plan starts at your next renewal. You keep your current credits until then.");
+    return true;
+  }
+
+  async function switchPlan(plan) {
+    setStatus("Switching plans…");
+    const r = await api("/billing/change", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: plan.slug }),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      setStatus(body.detail || "Couldn't switch plans. Try again.", "err");
+      load(); // un-arm the buttons
+      return;
+    }
+    if ((await r.json()).status === "upgraded") {
+      waitForCredits(); // the prorated charge's webhook lands in seconds
+    } else {
+      await load();
+      setStatus(`Done — ${plan.name} starts at your next renewal.`, "ok");
+    }
   }
 
   /* ---- checkout ---- */

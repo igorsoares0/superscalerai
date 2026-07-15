@@ -6,6 +6,7 @@ from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -40,8 +41,54 @@ def list_plans(user: User = Depends(get_current_user)) -> dict:
             "plan": user.plan,
             "renews_at": user.plan_renews_at.isoformat() if user.plan_renews_at else None,
             "cancels_at": user.plan_cancels_at.isoformat() if user.plan_cancels_at else None,
+            "pending": user.plan_pending,
         },
     }
+
+
+class ChangeBody(BaseModel):
+    plan: str
+
+
+@router.post("/change")
+def change_plan(
+    body: ChangeBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    """Switch an active subscription to another plan. Never opens a second
+    checkout — that would create a second subscription at Paddle. Upgrades
+    charge the prorated difference now (webhook resets credits within
+    seconds); downgrades start at the next renewal."""
+    target = next((p for p in billing.PLANS if p.slug == body.plan), None)
+    if target is None:
+        raise HTTPException(400, "unknown plan")
+    if not user.paddle_subscription_id:
+        raise HTTPException(400, "no active subscription")  # new users go through checkout
+    if user.plan_cancels_at is not None:
+        raise HTTPException(400, "subscription is already canceled")
+    if target.slug == user.plan:
+        raise HTTPException(400, "already on this plan")
+    if target.slug == user.plan_pending:  # repeat click on a scheduled downgrade
+        return {"status": "scheduled", "plan": target.slug}
+
+    current = next((p for p in billing.PLANS if p.slug == user.plan), None)
+    upgrade = current is None or target.amount > current.amount
+    try:
+        billing.change_subscription_plan(user.paddle_subscription_id, target.price_id, upgrade)
+    except httpx.HTTPError:
+        logger.exception("paddle plan change failed for %s", user.paddle_subscription_id)
+        raise HTTPException(502, "couldn't reach the payment provider, try again")
+
+    if upgrade:
+        logger.info("subscription %s upgraded to %s", user.paddle_subscription_id, target.slug)
+        return {"status": "upgraded", "plan": target.slug}
+    user.plan_pending = target.slug
+    db.commit()
+    logger.info(
+        "subscription %s downgrades to %s at next renewal",
+        user.paddle_subscription_id,
+        target.slug,
+    )
+    return {"status": "scheduled", "plan": target.slug}
 
 
 @router.post("/cancel")
