@@ -8,6 +8,10 @@
   const modal = document.getElementById("billing-modal");
   const plansBox = document.getElementById("billing-packs");
   const statusEl = document.getElementById("billing-status");
+  const cancelBox = document.getElementById("billing-cancel");
+  const cancelBtn = document.getElementById("billing-cancel-btn");
+  const cancelNote = document.getElementById("billing-cancel-note");
+  let cancelArmed = false;
 
   let catalog = null; // { environment, client_token, plans, current }
   let me = null; // { id, email }
@@ -57,7 +61,43 @@
     setStatus("");
     plansBox.innerHTML = "";
     for (const plan of catalog.plans) plansBox.appendChild(planButton(plan));
+    renderCancel();
   }
+
+  function renderCancel() {
+    cancelArmed = false;
+    const { plan, cancels_at } = catalog.current;
+    cancelBox.classList.toggle("hidden", !plan);
+    if (!plan) return;
+    if (cancels_at) {
+      cancelBtn.classList.add("hidden");
+      cancelNote.textContent =
+        `Plan ends ${new Date(cancels_at).toLocaleDateString()} — remaining credits expire then.`;
+      cancelNote.classList.remove("hidden");
+    } else {
+      cancelBtn.classList.remove("hidden");
+      cancelBtn.classList.remove("text-err");
+      cancelBtn.textContent = "Cancel subscription";
+      cancelNote.classList.add("hidden");
+    }
+  }
+
+  cancelBtn.addEventListener("click", async () => {
+    if (!cancelArmed) {
+      cancelArmed = true;
+      cancelBtn.classList.add("text-err");
+      cancelBtn.textContent =
+        "You'll keep your credits until the period ends, then lose them. Click again to confirm.";
+      return;
+    }
+    cancelBtn.disabled = true;
+    const r = await api("/billing/cancel", { method: "POST" });
+    cancelBtn.disabled = false;
+    if (!r.ok) return setStatus("Couldn't cancel the subscription. Try again.", "err");
+    catalog.current.cancels_at = (await r.json()).cancels_at;
+    renderCancel();
+    setStatus("Subscription canceled — no further charges.", "ok");
+  });
 
   function planButton(plan) {
     const isCurrent = catalog.current.plan === plan.slug;
@@ -83,10 +123,11 @@
       `${fmtPrice(plan.amount, plan.currency)}/mo`;
     if (isCurrent) {
       btn.querySelector('[data-pl="badge"]').classList.remove("hidden");
-      const renews = catalog.current.renews_at;
-      if (renews) {
+      const { renews_at, cancels_at } = catalog.current;
+      const when = cancels_at || renews_at;
+      if (when) {
         btn.querySelector('[data-pl="credits"]').textContent +=
-          ` · renews ${new Date(renews).toLocaleDateString()}`;
+          ` · ${cancels_at ? "ends" : "renews"} ${new Date(when).toLocaleDateString()}`;
       }
     } else {
       btn.addEventListener("click", () => checkout(plan));

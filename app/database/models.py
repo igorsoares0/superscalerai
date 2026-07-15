@@ -31,6 +31,10 @@ class User(Base):
     plan_renews_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # set when a cancellation is scheduled; the plan stays active until then
+    plan_cancels_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     signup_bonus_credits: int = 3
     cookie_secure: bool = False  # True behind HTTPS in production
     paddle_environment: str = "sandbox"  # "sandbox" | "production"
+    paddle_api_key: str = ""  # server-side API key (cancel subscriptions etc.)
     paddle_client_token: str = ""  # client-side token, safe to expose to the browser
     paddle_webhook_secret: str = ""  # notification-setting endpoint secret (pdl_ntfset_...)
     paddle_webhook_max_age_seconds: int = 300

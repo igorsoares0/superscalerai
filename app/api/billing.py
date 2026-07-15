@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -38,7 +39,33 @@ def list_plans(user: User = Depends(get_current_user)) -> dict:
         "current": {
             "plan": user.plan,
             "renews_at": user.plan_renews_at.isoformat() if user.plan_renews_at else None,
+            "cancels_at": user.plan_cancels_at.isoformat() if user.plan_cancels_at else None,
         },
+    }
+
+
+@router.post("/cancel")
+def cancel_plan(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Schedule the user's subscription to cancel at the end of the paid
+    period. Idempotent: once scheduled, repeats just return the date."""
+    if not user.paddle_subscription_id:
+        raise HTTPException(400, "no active subscription")
+    if user.plan_cancels_at is None:
+        try:
+            effective = billing.cancel_subscription(user.paddle_subscription_id)
+        except httpx.HTTPError:
+            logger.exception("paddle cancel failed for %s", user.paddle_subscription_id)
+            raise HTTPException(502, "couldn't reach the payment provider, try again")
+        # immediate cancels have no scheduled date; the webhook that follows
+        # clears the plan either way
+        user.plan_cancels_at = _parse_dt(effective) or user.plan_renews_at
+        db.commit()
+        logger.info(
+            "subscription %s cancels at %s", user.paddle_subscription_id, user.plan_cancels_at
+        )
+    return {
+        "plan": user.plan,
+        "cancels_at": user.plan_cancels_at.isoformat() if user.plan_cancels_at else None,
     }
 
 

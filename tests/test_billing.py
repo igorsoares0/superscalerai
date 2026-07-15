@@ -102,7 +102,7 @@ def test_plans_listed(client):
     for plan in body["plans"]:
         assert plan["price_id"].startswith("pri_")
         assert plan["credits"] > 0 and plan["amount"] > 0
-    assert body["current"] == {"plan": None, "renews_at": None}
+    assert body["current"] == {"plan": None, "renews_at": None, "cancels_at": None}
 
 
 # ---- webhook signature ----
@@ -204,6 +204,62 @@ def test_canceling_untracked_subscription_keeps_plan(client):
     assert r.status_code == 200 and r.json()["status"] == "ignored"
     assert client.get("/credits").json()["balance"] == BASIC
     assert client.get("/billing/plans").json()["current"]["plan"] == "basic"
+
+
+def test_cancel_requires_auth(anon_client):
+    assert anon_client.post("/billing/cancel").status_code == 401
+
+
+def test_cancel_without_subscription(client):
+    assert client.post("/billing/cancel").status_code == 400
+
+
+def test_cancel_schedules_end_of_period(client, monkeypatch):
+    calls = []
+
+    def fake_cancel(subscription_id):
+        calls.append(subscription_id)
+        return "2026-08-14T00:00:00Z"
+
+    monkeypatch.setattr(billing, "cancel_subscription", fake_cancel)
+    uid = user_id_of(client)
+    sub = f"sub_{uuid.uuid4().hex[:26]}"
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    r = client.post("/billing/cancel")
+    assert r.status_code == 200
+    assert r.json()["cancels_at"].startswith("2026-08-14")
+    assert calls == [sub]
+
+    # plan stays active with its credits until the effective date
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "basic" and current["cancels_at"].startswith("2026-08-14")
+    assert client.get("/credits").json()["balance"] == BASIC
+
+    # idempotent: a second click doesn't hit Paddle again
+    assert client.post("/billing/cancel").status_code == 200
+    assert calls == [sub]
+
+    # effective date arrives: the webhook expires everything, incl. cancels_at
+    post_webhook(client, canceled_event(uid, subscription_id=sub))
+    current = client.get("/billing/plans").json()["current"]
+    assert current == {"plan": None, "renews_at": None, "cancels_at": None}
+    assert client.get("/credits").json()["balance"] == 0
+
+
+def test_cancel_paddle_error_leaves_plan_untouched(client, monkeypatch):
+    import httpx
+
+    def boom(subscription_id):
+        raise httpx.HTTPError("paddle down")
+
+    monkeypatch.setattr(billing, "cancel_subscription", boom)
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid))
+
+    assert client.post("/billing/cancel").status_code == 502
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "basic" and current["cancels_at"] is None
 
 
 def test_other_apps_events_ignored(client):

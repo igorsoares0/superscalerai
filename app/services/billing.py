@@ -13,10 +13,17 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.models import CreditLedger, Payment, User
+
+PADDLE_API_BASE = {
+    "sandbox": "https://sandbox-api.paddle.com",
+    "production": "https://api.paddle.com",
+}
 
 # The Paddle sandbox account is shared with other apps; every price and
 # checkout we own is tagged with this in custom_data so the webhook can
@@ -99,6 +106,24 @@ def plan_in_transaction(data: dict) -> tuple[str, int] | None:
     return None
 
 
+def cancel_subscription(subscription_id: str) -> str | None:
+    """Ask Paddle to cancel at the end of the paid period (the user keeps
+    what they paid for; the subscription.canceled webhook expires the credits
+    on the effective date). Returns the ISO effective date — None when Paddle
+    canceled immediately instead of scheduling. Raises httpx.HTTPError on API
+    failure; callers decide how to answer the user."""
+    base = PADDLE_API_BASE[settings.paddle_environment]
+    r = httpx.post(
+        f"{base}/subscriptions/{subscription_id}/cancel",
+        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        json={"effective_from": "next_billing_period"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    change = (r.json().get("data") or {}).get("scheduled_change") or {}
+    return change.get("effective_at")
+
+
 def apply_renewal(
     db: Session,
     user: User,
@@ -136,6 +161,7 @@ def apply_renewal(
     user.plan = plan_slug
     user.paddle_subscription_id = subscription_id
     user.plan_renews_at = renews_at
+    user.plan_cancels_at = None  # a settled charge means the plan is live
     if delta != 0:
         db.add(
             CreditLedger(
@@ -154,3 +180,4 @@ def expire_subscription(db: Session, user: User) -> None:
     user.plan = None
     user.paddle_subscription_id = None
     user.plan_renews_at = None
+    user.plan_cancels_at = None
