@@ -102,12 +102,12 @@ def _handle_transaction_completed(db: Session, data: dict) -> str:
 
 def _handle_subscription_canceled(db: Session, data: dict) -> str:
     subscription_id = data.get("id")
-    custom = data.get("custom_data") or {}
+    # Match strictly on the subscription we track: a canceled subscription
+    # that isn't the user's current one (e.g. an orphan from a re-checkout)
+    # must not expire their active plan.
     user = db.scalar(select(User).where(User.paddle_subscription_id == subscription_id))
     if user is None:
-        user = db.get(User, custom.get("user_id") or "")
-    if user is None:
-        logger.warning("paddle webhook: no user for canceled subscription %s", subscription_id)
+        logger.warning("paddle webhook: no user tracks canceled subscription %s", subscription_id)
         return "ignored"
     billing.expire_subscription(db, user)
     db.commit()

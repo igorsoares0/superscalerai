@@ -192,6 +192,20 @@ def test_cancel_expires_credits_and_plan(client):
     assert client.get("/billing/plans").json()["current"]["plan"] is None
 
 
+def test_canceling_untracked_subscription_keeps_plan(client):
+    """An orphaned subscription (e.g. from a checkout whose webhook failed)
+    being canceled must not expire the user's current plan."""
+    uid = user_id_of(client)
+    current = f"sub_{uuid.uuid4().hex[:26]}"
+    orphan = f"sub_{uuid.uuid4().hex[:26]}"
+    post_webhook(client, completed_event(uid, subscription_id=current))
+
+    r = post_webhook(client, canceled_event(uid, subscription_id=orphan))
+    assert r.status_code == 200 and r.json()["status"] == "ignored"
+    assert client.get("/credits").json()["balance"] == BASIC
+    assert client.get("/billing/plans").json()["current"]["plan"] == "basic"
+
+
 def test_other_apps_events_ignored(client):
     uid = user_id_of(client)
     r = post_webhook(client, completed_event(uid, app="someother"))

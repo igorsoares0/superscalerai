@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.api import billing, credits, download, images, jobs
 from app.auth import router as auth
 from app.auth import service as auth_service
-from app.database.models import Base, Job
+from app.database.migrate import run_migrations
+from app.database.models import Job
 from app.database.session import engine
 from app.web import router as web
 from app.services import credits as credits_service
@@ -18,8 +19,7 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="SuperScaler AI")
 
-# Dev bootstrap; replaced by Alembic migrations before any real deploy
-Base.metadata.create_all(engine)
+run_migrations()
 
 # Jobs run in-process (BackgroundTasks): anything still "running"/"queued"
 # at startup was interrupted by a restart and will never finish.
