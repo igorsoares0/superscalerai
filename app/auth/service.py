@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.database.models import AuthSession, User
+from app.database.models import AuthSession, PasswordReset, User
 
 _hasher = PasswordHasher()
 
@@ -58,5 +58,45 @@ def revoke_session(db: Session, token: str) -> None:
 
 
 def purge_expired_sessions(db: Session) -> None:
-    db.execute(delete(AuthSession).where(AuthSession.expires_at < datetime.now(timezone.utc)))
+    now = datetime.now(timezone.utc)
+    db.execute(delete(AuthSession).where(AuthSession.expires_at < now))
+    db.execute(delete(PasswordReset).where(PasswordReset.expires_at < now))
     db.commit()
+
+
+def create_password_reset(db: Session, user_id: str) -> str:
+    """Returns the raw token (goes into the emailed link); only its hash is
+    stored. Caller commits."""
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.password_reset_ttl_minutes
+    )
+    db.add(PasswordReset(token_hash=_token_hash(token), user_id=user_id, expires_at=expires))
+    return token
+
+
+def reset_password(db: Session, token: str, new_password: str) -> User | None:
+    """Consume a reset token: set the new password, revoke every login
+    session (the old password may be compromised) and the user's other
+    outstanding reset tokens. None when the token is unknown, used or
+    expired. Caller commits."""
+    row = db.scalar(select(PasswordReset).where(PasswordReset.token_hash == _token_hash(token)))
+    if row is None or row.used_at is not None:
+        return None
+    expires = row.expires_at
+    if expires.tzinfo is None:  # SQLite returns naive datetimes
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        return None
+    user = db.get(User, row.user_id)
+    if user is None:
+        return None
+    user.password_hash = hash_password(new_password)
+    row.used_at = datetime.now(timezone.utc)
+    db.execute(
+        delete(PasswordReset).where(
+            PasswordReset.user_id == user.id, PasswordReset.id != row.id
+        )
+    )
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    return user

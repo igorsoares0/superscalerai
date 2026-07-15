@@ -20,6 +20,7 @@
       --color-mute:   #8d8d97;
       --color-accent: #4b72ff;
       --color-err:    #ff6161;
+      --color-ok:     #3ecf8e;
       --font-display: "Space Grotesk", sans-serif;
       --font-sans:    "Inter", system-ui, sans-serif;
       --font-mono:    "JetBrains Mono", ui-monospace, monospace;
@@ -47,13 +48,18 @@
             <input id="email" type="email" required autocomplete="email"
               class="w-full rounded-xl border border-line bg-ink px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent">
           </div>
-          <div>
+          <div id="password-block">
             <label for="password" class="mb-1.5 block text-xs font-medium text-mute">Password</label>
             <input id="password" type="password" required minlength="8" autocomplete="current-password"
               class="w-full rounded-xl border border-line bg-ink px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent">
             <p id="password-hint" class="mt-1.5 hidden text-xs text-mute">At least 8 characters.</p>
+            <p class="mt-1.5 text-right">
+              <button type="button" id="forgot-link" class="text-xs text-mute transition-colors hover:text-body">Forgot password?</button>
+            </p>
           </div>
+          <p id="forgot-hint" class="hidden text-sm text-mute">Enter your account email and we'll send you a link to choose a new password.</p>
           <p id="auth-error" class="hidden text-sm text-err"></p>
+          <p id="auth-ok" class="hidden text-sm text-ok"></p>
           <button id="submit-btn" type="submit"
             class="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85 disabled:opacity-50">
             Sign in
@@ -70,31 +76,56 @@
     const form = document.getElementById("auth-form");
     const submitBtn = document.getElementById("submit-btn");
     const errorEl = document.getElementById("auth-error");
+    const okEl = document.getElementById("auth-ok");
+    const passwordEl = document.getElementById("password");
     let mode = "login";
 
     function setMode(next) {
       mode = next;
+      const forgot = mode === "forgot";
       for (const [name, el] of Object.entries(tabs)) {
         const active = name === mode;
         el.setAttribute("aria-selected", String(active));
         el.classList.toggle("bg-raise", active);
         el.classList.toggle("text-mute", !active);
       }
-      submitBtn.textContent = mode === "login" ? "Sign in" : "Create account";
-      document.getElementById("password-hint").classList.toggle("hidden", mode === "login");
-      document.getElementById("bonus-note").classList.toggle("hidden", mode === "login");
-      document.getElementById("password").autocomplete = mode === "login" ? "current-password" : "new-password";
+      submitBtn.textContent =
+        mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Send reset link";
+      document.getElementById("password-block").classList.toggle("hidden", forgot);
+      document.getElementById("forgot-hint").classList.toggle("hidden", !forgot);
+      passwordEl.required = !forgot;
+      document.getElementById("password-hint").classList.toggle("hidden", mode !== "register");
+      document.getElementById("bonus-note").classList.toggle("hidden", mode !== "register");
+      passwordEl.autocomplete = mode === "login" ? "current-password" : "new-password";
       errorEl.classList.add("hidden");
+      okEl.classList.add("hidden");
     }
     tabs.login.addEventListener("click", () => setMode("login"));
     tabs.register.addEventListener("click", () => setMode("register"));
+    document.getElementById("forgot-link").addEventListener("click", () => setMode("forgot"));
     setMode("login");
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       submitBtn.disabled = true;
       errorEl.classList.add("hidden");
+      okEl.classList.add("hidden");
       try {
+        if (mode === "forgot") {
+          const r = await fetch("/auth/forgot", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: document.getElementById("email").value.trim() }),
+          });
+          if (r.ok) {
+            okEl.textContent = "If that email has an account, a reset link is on its way. Check your inbox.";
+            okEl.classList.remove("hidden");
+          } else {
+            errorEl.textContent = "Enter a valid email address.";
+            errorEl.classList.remove("hidden");
+          }
+          return;
+        }
         const r = await fetch(`/auth/${mode}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

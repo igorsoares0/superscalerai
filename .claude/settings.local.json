@@ -26,7 +26,10 @@
       "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv run pytest tests/test_billing.py::test_cancel_expires_credits_and_plan -q)",
       "Bash(curl -sI https://sandbox-api.paddle.com)",
       "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv run *)",
-      "Bash(DATABASE_URL=\"sqlite:////tmp/claude-1000/-mnt-c-allsaas-superscalerai/0fbc8a01-b227-4344-b893-f73e21b4cd62/scratchpad/empty.db\" UV_PROJECT_ENVIRONMENT=.venv-wsl uv run *)"
+      "Bash(DATABASE_URL=\"sqlite:////tmp/claude-1000/-mnt-c-allsaas-superscalerai/0fbc8a01-b227-4344-b893-f73e21b4cd62/scratchpad/empty.db\" UV_PROJECT_ENVIRONMENT=.venv-wsl uv run *)",
+      "mcp__plugin_resend_resend__list-api-keys",
+      "mcp__plugin_resend_resend__list-domains",
+      "mcp__plugin_resend_resend__create-api-key"
     ]
   }
 }

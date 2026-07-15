@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from app.auth import service
 from app.core.config import settings
 from app.database.models import CreditLedger, User
 from app.database.session import get_db
+from app.services import email as email_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -85,4 +86,40 @@ def logout(
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user)) -> dict:
+    return _user_payload(user)
+
+
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+
+class ResetBody(BaseModel):
+    token: str = Field(min_length=16, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/forgot")
+def forgot_password(
+    body: ForgotBody, background: BackgroundTasks, db: Session = Depends(get_db)
+) -> dict:
+    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    if user is not None:
+        token = service.create_password_reset(db, user.id)
+        db.commit()
+        reset_url = f"{settings.app_base_url}/reset?token={token}"
+        # sent after the response so timing doesn't reveal whether the email exists
+        background.add_task(email_service.send_password_reset, user.email, reset_url)
+    # same answer for known and unknown emails: don't leak which ones exist
+    return {"ok": True}
+
+
+@router.post("/reset")
+def reset_password(body: ResetBody, response: Response, db: Session = Depends(get_db)) -> dict:
+    user = service.reset_password(db, body.token, body.password)
+    if user is None:
+        raise HTTPException(400, "invalid or expired reset link")
+    # reset_password revoked every session; sign the user straight in here
+    token = service.create_session(db, user.id)
+    db.commit()
+    _set_session_cookie(response, token)
     return _user_payload(user)

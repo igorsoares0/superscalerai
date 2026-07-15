@@ -47,6 +47,21 @@ class AuthSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class PasswordReset(Base):
+    """Single-use, short-lived password recovery token. As with AuthSession,
+    only the SHA-256 of the token is stored; the raw token exists only in the
+    emailed link."""
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ImageRecord(Base):
     __tablename__ = "images"
 

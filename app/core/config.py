@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     paddle_client_token: str = ""  # client-side token, safe to expose to the browser
     paddle_webhook_secret: str = ""  # notification-setting endpoint secret (pdl_ntfset_...)
     paddle_webhook_max_age_seconds: int = 300
+    resend_api_key: str = ""  # empty = emails are logged instead of sent (dev)
+    email_from: str = "SuperScaler <no-reply@example.com>"
+    app_base_url: str = "http://localhost:8000"  # base for links inside emails
+    password_reset_ttl_minutes: int = 30
 
 
 settings = Settings()

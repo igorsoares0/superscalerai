@@ -40,3 +40,9 @@ def library(request: Request):
 @router.get("/login", response_class=HTMLResponse)
 def login(request: Request):
     return templates.TemplateResponse(request, "login.html", {"page": "login"})
+
+
+@router.get("/reset", response_class=HTMLResponse)
+def reset(request: Request):
+    """Landing page for the password-reset email link (?token=...)."""
+    return templates.TemplateResponse(request, "reset.html", {"page": "reset"})

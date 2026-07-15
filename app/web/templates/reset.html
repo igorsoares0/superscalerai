@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SuperScaler — Reset password</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"
+          integrity="sha384-XXN6/S6yXj8EpXnBTw3JGR9ZM+hixGxFCLYn0FHtg9cWh0ziKmAgTPEhecbCDOmj"
+          crossorigin="anonymous"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-ink:    #0a0a0c;
+      --color-panel:  #131316;
+      --color-raise:  #1a1a20;
+      --color-line:   rgba(255,255,255,0.07);
+      --color-body:   #f0f0f3;
+      --color-mute:   #8d8d97;
+      --color-accent: #4b72ff;
+      --color-err:    #ff6161;
+      --font-display: "Space Grotesk", sans-serif;
+      --font-sans:    "Inter", system-ui, sans-serif;
+      --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body class="h-full bg-ink font-sans text-body antialiased">
+  <main class="flex min-h-full items-center justify-center px-6 py-12">
+    <div class="w-full max-w-sm">
+      <div class="mb-8 text-center">
+        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 font-display text-xl font-bold text-accent">S</div>
+        <h1 class="font-display text-2xl font-bold tracking-tight">Choose a new password</h1>
+        <p class="mt-1 text-sm text-mute">Your other devices will be signed out.</p>
+      </div>
+
+      <div class="rounded-2xl border border-line bg-panel p-6">
+        <form id="reset-form" class="space-y-4">
+          <div>
+            <label for="password" class="mb-1.5 block text-xs font-medium text-mute">New password</label>
+            <input id="password" type="password" required minlength="8" autocomplete="new-password"
+              class="w-full rounded-xl border border-line bg-ink px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent">
+            <p class="mt-1.5 text-xs text-mute">At least 8 characters.</p>
+          </div>
+          <p id="reset-error" class="hidden text-sm text-err"></p>
+          <button id="submit-btn" type="submit"
+            class="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85 disabled:opacity-50">
+            Reset password
+          </button>
+        </form>
+        <p class="mt-4 text-center text-xs text-mute">
+          <a href="/login" class="transition-colors hover:text-body">Back to sign in</a>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const token = new URLSearchParams(location.search).get("token");
+    const form = document.getElementById("reset-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const errorEl = document.getElementById("reset-error");
+
+    function fail(msg) {
+      errorEl.textContent = msg;
+      errorEl.classList.remove("hidden");
+    }
+
+    if (!token) {
+      fail("This reset link is incomplete. Open the link from the email again.");
+      submitBtn.disabled = true;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!token) return;
+      submitBtn.disabled = true;
+      errorEl.classList.add("hidden");
+      try {
+        const r = await fetch("/auth/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, password: document.getElementById("password").value }),
+        });
+        if (r.ok) { location.href = "/"; return; }
+        fail(r.status === 400
+          ? "This reset link is invalid or has expired. Request a new one from the sign-in page."
+          : "Something went wrong. Try again.");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
