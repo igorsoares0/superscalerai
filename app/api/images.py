@@ -1,18 +1,20 @@
 import io
+import logging
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
-from app.database.models import ImageRecord, User
+from app.database.models import CreditLedger, ImageRecord, Job, User
 from app.database.session import get_db
 
 router = APIRouter(prefix="/images", tags=["images"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 
@@ -61,6 +63,44 @@ def get_image(
         "height": row.height,
         "enhanced": row.enhanced_path is not None,
     }
+
+
+@router.delete("/{image_id}")
+def delete_image(
+    image_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> dict:
+    row = db.get(ImageRecord, image_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(404, "image not found")
+    active = db.scalar(
+        select(Job.id).where(
+            Job.image_id == row.id, Job.status.in_(("pending", "queued", "running"))
+        )
+    )
+    if active is not None:
+        raise HTTPException(409, "a job is still processing this image")
+
+    job_ids = db.scalars(select(Job.id).where(Job.image_id == row.id)).all()
+    if job_ids:
+        # the credit ledger is the financial history — orphan its job
+        # references, never delete the entries themselves
+        db.execute(
+            update(CreditLedger).where(CreditLedger.job_id.in_(job_ids)).values(job_id=None)
+        )
+        db.execute(delete(Job).where(Job.id.in_(job_ids)))
+    paths = [row.original_path, row.enhanced_path, row.thumb_path]
+    db.delete(row)
+    db.commit()
+
+    # files go last: a crash above leaves them orphaned on disk (harmless),
+    # never a DB row pointing at nothing
+    for p in paths:
+        if p:
+            try:
+                Path(p).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("couldn't remove file %s", p)
+    return {"ok": True}
 
 
 @router.get("")
