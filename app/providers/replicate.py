@@ -13,6 +13,7 @@ API = "https://api.replicate.com/v1"
 MODELS = {
     "generative-upscaler": "philz1337x/clarity-upscaler:dfad41707589d68ecdccd1dfa600d55a208f9310748e44bfe35b4a6291453d5e",
     "captioner": "andreasjansson/blip-2:f677695e5e89f8b236e52ecd1d3f01beb44c34606419bcc19345e046d8f786f9",
+    "deterministic-upscaler": "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
 }
 
 
