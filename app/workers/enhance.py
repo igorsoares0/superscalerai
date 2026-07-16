@@ -32,7 +32,7 @@ def run_enhancement(job_id: str) -> None:
         start = time.monotonic()
         try:
             image = Image.open(image_row.original_path)
-            pipeline = build_pipeline(job.id, job.preset, seed=job.seed)
+            pipeline = build_pipeline(job.id, job.preset, seed=job.seed, options=job.options)
             state = asyncio.run(pipeline.run(image))
 
             assert state.plan is not None

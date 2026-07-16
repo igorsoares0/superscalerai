@@ -4,7 +4,9 @@ const els = Object.fromEntries(
   ["stage-empty", "stage-work", "dropzone", "dropzone-label", "file-input", "upload-error",
    "work-title", "work-meta", "reset-btn", "preview-img", "scan-overlay", "compare-root",
    "controls", "cost-label", "enhance-btn", "job-error", "running-note", "running-label",
-   "done-actions", "download-btn", "recent-grid", "recent-empty"]
+   "done-actions", "download-btn", "recent-grid", "recent-empty", "advanced-panel",
+   "adv-creativity", "adv-creativity-val", "adv-resemblance", "adv-resemblance-val",
+   "adv-hdr", "adv-hdr-val", "adv-prompt"]
     .map((id) => [id.replace(/-(\w)/g, (_, c) => c.toUpperCase()), document.getElementById(id)])
 );
 
@@ -92,9 +94,52 @@ document.querySelectorAll(".preset-chip").forEach((chip) =>
 
 function selectPreset(preset) {
   current.preset = preset;
-  document.querySelectorAll(".preset-chip").forEach((chip) =>
-    chip.setAttribute("aria-pressed", String(chip.dataset.preset === preset))
-  );
+  document.querySelectorAll(".preset-chip").forEach((chip) => {
+    const active = chip.dataset.preset === preset;
+    chip.setAttribute("aria-pressed", String(active));
+    if (active) resetAdvanced(chip);
+  });
+}
+
+/* ---- advanced sliders ---- */
+
+const HDR_DEFAULT = 6;
+let advDefaults = { creativity: 0, resemblance: 0 };
+
+function resetAdvanced(chip) {
+  advDefaults = {
+    creativity: parseFloat(chip.dataset.creativity),
+    resemblance: parseFloat(chip.dataset.resemblance),
+  };
+  els.advCreativity.value = advDefaults.creativity;
+  els.advResemblance.value = advDefaults.resemblance;
+  els.advHdr.value = HDR_DEFAULT;
+  els.advPrompt.value = "";
+  syncAdvancedLabels();
+}
+
+function syncAdvancedLabels() {
+  els.advCreativityVal.textContent = parseFloat(els.advCreativity.value).toFixed(2);
+  els.advResemblanceVal.textContent = parseFloat(els.advResemblance.value).toFixed(2);
+  els.advHdrVal.textContent = els.advHdr.value;
+}
+
+[els.advCreativity, els.advResemblance, els.advHdr].forEach((slider) =>
+  slider.addEventListener("input", syncAdvancedLabels)
+);
+
+/* only what the user actually changed becomes an override */
+function advancedOverrides() {
+  const out = {};
+  const creativity = parseFloat(els.advCreativity.value);
+  const resemblance = parseFloat(els.advResemblance.value);
+  const hdr = parseFloat(els.advHdr.value);
+  if (creativity !== advDefaults.creativity) out.creativity = creativity;
+  if (resemblance !== advDefaults.resemblance) out.resemblance = resemblance;
+  if (hdr !== HDR_DEFAULT) out.hdr = hdr;
+  const prompt = els.advPrompt.value.trim();
+  if (prompt) out.prompt_extra = prompt;
+  return out;
 }
 
 els.resetBtn.addEventListener("click", () => {
@@ -113,7 +158,7 @@ els.enhanceBtn.addEventListener("click", async () => {
   const r = await api("/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image_id: current.imageId, preset: current.preset }),
+    body: JSON.stringify({ image_id: current.imageId, preset: current.preset, ...advancedOverrides() }),
   });
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));

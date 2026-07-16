@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,26 @@ class JobCreate(BaseModel):
     image_id: str
     preset: str = "portrait"
     seed: int | None = None
+    # advanced overrides; bounds follow Clarity's useful ranges (schema:
+    # creativity 0.3-0.9, resemblance 0.3-1.6, dynamic 3-9), narrowed where
+    # our validation showed identity drift
+    creativity: float | None = Field(None, ge=0.1, le=0.6)
+    resemblance: float | None = Field(None, ge=0.3, le=1.5)
+    hdr: float | None = Field(None, ge=1, le=10)
+    prompt_extra: str | None = Field(None, max_length=120)
+
+    def options(self) -> dict | None:
+        picked = {
+            k: v
+            for k, v in (
+                ("creativity", self.creativity),
+                ("resemblance", self.resemblance),
+                ("hdr", self.hdr),
+                ("prompt_extra", (self.prompt_extra or "").strip() or None),
+            )
+            if v is not None
+        }
+        return picked or None
 
 
 @router.post("", status_code=201)
@@ -31,7 +51,14 @@ def create_job(
     image = db.get(ImageRecord, body.image_id)
     if image is None or image.user_id != user.id:
         raise HTTPException(404, "image not found")
-    job = Job(user_id=user.id, image_id=image.id, preset=body.preset, seed=body.seed, status="queued")
+    job = Job(
+        user_id=user.id,
+        image_id=image.id,
+        preset=body.preset,
+        seed=body.seed,
+        options=body.options(),
+        status="queued",
+    )
     db.add(job)
     db.flush()  # assigns job.id for the ledger entry
     cost = credits.job_cost(image.width, image.height)

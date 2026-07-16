@@ -38,6 +38,7 @@ class GenerativeUpscaler(PipelineStage):
                 "negative_prompt": NEGATIVE_PROMPT,
                 "creativity": plan.denoise,
                 "resemblance": plan.guidance,
+                "dynamic": plan.hdr,
                 "scale_factor": plan.scale_factor,
                 "seed": plan.seed,
                 "num_inference_steps": 18,

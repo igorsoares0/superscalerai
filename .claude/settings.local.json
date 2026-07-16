@@ -29,7 +29,8 @@
       "Bash(DATABASE_URL=\"sqlite:////tmp/claude-1000/-mnt-c-allsaas-superscalerai/0fbc8a01-b227-4344-b893-f73e21b4cd62/scratchpad/empty.db\" UV_PROJECT_ENVIRONMENT=.venv-wsl uv run *)",
       "mcp__plugin_resend_resend__list-api-keys",
       "mcp__plugin_resend_resend__list-domains",
-      "mcp__plugin_resend_resend__create-api-key"
+      "mcp__plugin_resend_resend__create-api-key",
+      "mcp__replicate__get_models_versions"
     ]
   }
 }

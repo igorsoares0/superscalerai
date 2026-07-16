@@ -89,6 +89,7 @@ class Job(Base):
     image_id: Mapped[str] = mapped_column(ForeignKey("images.id"), index=True)
     preset: Mapped[str] = mapped_column(String(32))
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    options: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # user's advanced overrides
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # resolved ExecutionPlan
     credits_cost: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)

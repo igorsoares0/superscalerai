@@ -24,7 +24,13 @@ PRESET_LABELS = {
 @router.get("/", response_class=HTMLResponse)
 def workspace(request: Request):
     presets = [
-        {"id": key, "label": PRESET_LABELS[key][0], "hint": PRESET_LABELS[key][1]}
+        {
+            "id": key,
+            "label": PRESET_LABELS[key][0],
+            "hint": PRESET_LABELS[key][1],
+            "creativity": PRESETS[key].denoise,
+            "resemblance": PRESETS[key].guidance,
+        }
         for key in PRESETS
     ]
     return templates.TemplateResponse(

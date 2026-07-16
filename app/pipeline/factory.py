@@ -18,6 +18,7 @@ def build_pipeline(
     preset: str,
     scale_factor: float = 2,
     seed: int | None = None,
+    options: dict | None = None,
     provider: AIProvider | None = None,
 ) -> PipelineEngine:
     provider = provider or ReplicateProvider()
@@ -25,7 +26,7 @@ def build_pipeline(
         [
             Analyzer(),
             Captioner(provider),
-            Planner(preset, scale_factor, seed),
+            Planner(preset, scale_factor, seed, options),
             Preprocessor(),
             GenerativeUpscaler(provider),
             LocalEnhancers(provider),

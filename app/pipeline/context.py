@@ -30,6 +30,7 @@ class ExecutionPlan(BaseModel):
     passes: int
     denoise: float
     guidance: float
+    hdr: float = 6.0  # Clarity `dynamic`, its default
     prompt: str
     seed: int
     local_enhancers: list[str] = Field(default_factory=list)

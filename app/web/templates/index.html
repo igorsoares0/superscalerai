@@ -42,13 +42,49 @@
     <div id="controls" class="mt-5">
       <div class="grid gap-2 sm:grid-cols-4" id="preset-row">
         {% for p in presets %}
-        <button data-preset="{{ p.id }}"
+        <button data-preset="{{ p.id }}" data-creativity="{{ p.creativity }}" data-resemblance="{{ p.resemblance }}"
           class="preset-chip rounded-xl border border-line bg-panel px-4 py-3 text-left transition-colors hover:bg-raise">
           <span class="block text-sm font-medium">{{ p.label }}</span>
           <span class="block text-xs text-mute">{{ p.hint }}</span>
         </button>
         {% endfor %}
       </div>
+
+      <details id="advanced-panel" class="mt-3 rounded-xl border border-line bg-panel">
+        <summary class="cursor-pointer select-none px-4 py-3 text-sm text-mute transition-colors hover:text-body">
+          Advanced settings <span class="font-mono text-xs">— creativity, resemblance, HDR, prompt</span>
+        </summary>
+        <div class="grid gap-5 px-4 pb-4 sm:grid-cols-3">
+          <label class="block">
+            <span class="flex justify-between text-xs text-mute">
+              <span>Creativity</span><span id="adv-creativity-val" class="font-mono"></span>
+            </span>
+            <input id="adv-creativity" type="range" min="0.1" max="0.6" step="0.01"
+                   class="mt-2 w-full" style="accent-color: var(--color-accent)">
+            <span class="mt-1 block text-[11px] leading-snug text-mute">How much detail the AI invents</span>
+          </label>
+          <label class="block">
+            <span class="flex justify-between text-xs text-mute">
+              <span>Resemblance</span><span id="adv-resemblance-val" class="font-mono"></span>
+            </span>
+            <input id="adv-resemblance" type="range" min="0.3" max="1.5" step="0.01"
+                   class="mt-2 w-full" style="accent-color: var(--color-accent)">
+            <span class="mt-1 block text-[11px] leading-snug text-mute">How closely it follows the original</span>
+          </label>
+          <label class="block">
+            <span class="flex justify-between text-xs text-mute">
+              <span>HDR</span><span id="adv-hdr-val" class="font-mono"></span>
+            </span>
+            <input id="adv-hdr" type="range" min="1" max="10" step="1"
+                   class="mt-2 w-full" style="accent-color: var(--color-accent)">
+            <span class="mt-1 block text-[11px] leading-snug text-mute">Local contrast and punch</span>
+          </label>
+        </div>
+        <div class="px-4 pb-4">
+          <input id="adv-prompt" type="text" maxlength="120" placeholder="Optional: extra prompt terms, e.g. “golden hour, film grain”"
+                 class="w-full rounded-lg border border-line bg-raise px-3 py-2 text-sm placeholder:text-mute focus:border-accent focus:outline-none">
+        </div>
+      </details>
 
       <div class="mt-4 flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-3 text-sm text-mute">
