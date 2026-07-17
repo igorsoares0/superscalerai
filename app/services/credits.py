@@ -15,13 +15,19 @@ class InsufficientCredits(Exception):
 
 
 def job_cost(width: int, height: int, scale_factor: float = 2) -> int:
-    """Cost by output resolution (SPEC.md Credits table)."""
+    """Cost by output resolution (SPEC.md Credits table).
+
+    GPU cost grows ~quadratically with output size, so the tiers must keep
+    climbing — a flat top tier runs the biggest jobs at a loss.
+    """
     long_edge = max(width, height) * scale_factor
     if long_edge <= 1024:
         return 1
     if long_edge <= 2048:
         return 2
-    return 4
+    if long_edge <= 4096:
+        return 4
+    return 8
 
 
 def debit_for_job(db: Session, user: User, job: Job, cost: int) -> None:

@@ -19,6 +19,24 @@ def test_upload_rejects_non_image(client):
     assert r.status_code == 415
 
 
+def test_upload_rejects_oversized_image(client):
+    from app.core.config import settings
+
+    big = png_bytes(size=(settings.max_image_px + 1, 10))
+    r = client.post("/images/upload", files={"file": ("t.png", big, "image/png")})
+    assert r.status_code == 413
+    assert str(settings.max_image_px) in r.json()["detail"]
+
+
+def test_upload_accepts_image_at_the_cap(client):
+    from app.core.config import settings
+
+    edge = png_bytes(size=(settings.max_image_px, 10))
+    r = client.post("/images/upload", files={"file": ("t.png", edge, "image/png")})
+    assert r.status_code == 201, r.text
+    assert r.json()["width"] == settings.max_image_px
+
+
 def test_job_requires_known_preset(client):
     r = client.post("/jobs", json={"image_id": "whatever", "preset": "nope"})
     assert r.status_code == 422

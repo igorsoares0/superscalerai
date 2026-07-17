@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     replicate_api_token: str = ""
     storage_dir: Path = Path("storage")
     max_upload_mb: int = 25
+    # Longest input edge. GPU cost grows ~quadratically with size (~$0.08 at
+    # 1792px 2x) while the credit price caps at 4 credits, so huge inputs run
+    # at a loss besides being slow/flaky on the provider.
+    max_image_px: int = 3072
+    max_concurrent_jobs: int = 4  # Replicate 429s around 8 parallel predictions
     session_ttl_days: int = 30
     signup_bonus_credits: int = 3
     cookie_secure: bool = False  # True behind HTTPS in production

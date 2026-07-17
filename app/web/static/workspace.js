@@ -16,7 +16,7 @@ let pollTimer = null;
 /* mirrors app/services/credits.job_cost (2x scale) */
 function estimateCost(w, h) {
   const edge = Math.max(w, h) * 2;
-  return edge <= 1024 ? 1 : edge <= 2048 ? 2 : 4;
+  return edge <= 1024 ? 1 : edge <= 2048 ? 2 : edge <= 4096 ? 4 : 8;
 }
 
 /* ---- upload ---- */

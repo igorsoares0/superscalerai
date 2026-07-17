@@ -49,6 +49,14 @@ MVP: in-process background tasks (FastAPI BackgroundTasks) — no extra
 infrastructure. The dispatch contract (`run_enhancement(job_id)` + job
 status in the DB) is queue-agnostic.
 
+Launch decision (2026-07-17): a real queue is NOT part of the launch block.
+The two failure modes it would cover are handled in-process instead:
+- restart kills in-flight jobs → startup sweep in `app/main.py` fails
+  orphaned queued/running jobs and refunds their credits (idempotent);
+- unbounded parallelism → `threading.BoundedSemaphore(max_concurrent_jobs)`
+  in `app/workers/enhance.py` (default 4; Replicate 429s near 8 parallel
+  predictions). Excess jobs wait on their threadpool thread, still "queued".
+
 When multiple workers / retries / horizontal scale are needed: Redis + RQ,
 swapped in at a single point (`app/jobs/queue.py`).
 
@@ -192,7 +200,11 @@ Supported formats
 - PNG
 - WEBP
 
-Maximum size configurable.
+Maximum size configurable: `max_upload_mb` (default 25 MB) and
+`max_image_px` (default 3072px on the longest edge, HTTP 413 above it).
+The pixel cap exists because GPU cost grows ~quadratically with input size
+(~$0.08 at 1792px 2x) while the credit price caps at 4 credits — huge
+inputs would run at a loss and time out on the provider.
 
 ---
 
@@ -237,15 +249,16 @@ Download
 
 # Credits
 
-Each enhancement consumes credits.
+Each enhancement consumes credits, by OUTPUT resolution (longest edge).
+Tiers keep climbing because GPU cost grows ~quadratically with output size
+(tier added 2026-07-17, user-approved).
 
-Example
-
-| Resolution | Credits |
-|------------|----------|
-| 1024px | 1 |
-| 2048px | 2 |
-| 4096px | 4 |
+| Output resolution | Credits |
+|-------------------|---------|
+| ≤1024px | 1 |
+| ≤2048px | 2 |
+| ≤4096px | 4 |
+| >4096px | 8 |
 
 ---
 

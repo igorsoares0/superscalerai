@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.core.config import settings
 from app.pipeline.presets import PRESETS
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -34,7 +35,14 @@ def workspace(request: Request):
         for key in PRESETS
     ]
     return templates.TemplateResponse(
-        request, "index.html", {"presets": presets, "page": "workspace"}
+        request,
+        "index.html",
+        {
+            "presets": presets,
+            "page": "workspace",
+            "max_upload_mb": settings.max_upload_mb,
+            "max_image_px": settings.max_image_px,
+        },
     )
 
 

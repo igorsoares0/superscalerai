@@ -6,10 +6,12 @@ function becomes an RQ/Celery task unchanged when we move to real workers.
 
 import asyncio
 import logging
+import threading
 import time
 
 from PIL import Image
 
+from app.core.config import settings
 from app.database.models import ImageRecord, Job
 from app.database.session import SessionLocal
 from app.pipeline.factory import build_pipeline
@@ -17,8 +19,18 @@ from app.services import credits
 
 logger = logging.getLogger(__name__)
 
+# Each job fires several Replicate predictions and 8 in parallel already hit
+# 429 (calibration, 2026-07-16). Excess jobs block here on their threadpool
+# thread, still "queued" in the DB.
+_slots = threading.BoundedSemaphore(settings.max_concurrent_jobs)
+
 
 def run_enhancement(job_id: str) -> None:
+    with _slots:
+        _run(job_id)
+
+
+def _run(job_id: str) -> None:
     with SessionLocal() as db:
         job = db.get(Job, job_id)
         if job is None:

@@ -11,8 +11,9 @@ from tests.conftest import png_bytes
 def test_job_cost_tiers():
     assert credits.job_cost(512, 512) == 1  # 1024 output
     assert credits.job_cost(1024, 768) == 2  # 2048 output
-    assert credits.job_cost(2048, 2048) == 4
-    assert credits.job_cost(4000, 3000) == 4  # capped tier
+    assert credits.job_cost(2048, 2048) == 4  # 4096 output, top of the tier
+    assert credits.job_cost(2049, 100) == 8  # past 4096 output
+    assert credits.job_cost(3072, 3072) == 8  # biggest input the upload cap allows
 
 
 def _make_user_and_job(db, balance: int):

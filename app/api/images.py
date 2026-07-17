@@ -35,13 +35,18 @@ async def upload_image(
         raise HTTPException(415, "not a valid image") from None
     if image.format not in ALLOWED_FORMATS:
         raise HTTPException(415, f"format {image.format} not supported")
+    width, height = image.size
+    if max(width, height) > settings.max_image_px:
+        raise HTTPException(
+            413,
+            f"image is {width}×{height}px; the longest side must be "
+            f"at most {settings.max_image_px}px",
+        )
 
     ext = image.format.lower()
     dest = Path(settings.storage_dir) / "uploads" / f"{uuid.uuid4()}.{ext}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
-
-    width, height = Image.open(dest).size
     row = ImageRecord(
         user_id=user.id, original_path=str(dest), width=width, height=height
     )
