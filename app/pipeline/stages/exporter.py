@@ -1,14 +1,20 @@
 """Stage 8: Exporter — final image, thumbnail, metadata (SPEC.md)."""
 
+import io
 import json
-from pathlib import Path
 
 from PIL import Image
 
-from app.core.config import settings
 from app.pipeline.base import PipelineStage, PipelineState
+from app.services.storage import get_storage
 
 THUMB_SIZE = (512, 512)
+
+
+def _png_bytes(image: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
 
 class Exporter(PipelineStage):
@@ -18,25 +24,28 @@ class Exporter(PipelineStage):
         self.job_id = job_id
 
     async def process(self, image: Image.Image, state: PipelineState) -> Image.Image:
-        out_dir = Path(settings.storage_dir) / "jobs" / self.job_id
-        out_dir.mkdir(parents=True, exist_ok=True)
+        storage = get_storage()
+        prefix = f"jobs/{self.job_id}"
 
-        image.save(out_dir / "enhanced.png", optimize=True)
+        storage.put(f"{prefix}/enhanced.png", _png_bytes(image))
+
         thumb = image.copy()
         thumb.thumbnail(THUMB_SIZE)
-        thumb.save(out_dir / "thumb.jpg", quality=85)
+        thumb_buf = io.BytesIO()
+        thumb.convert("RGB").save(thumb_buf, format="JPEG", quality=85)
+        storage.put(f"{prefix}/thumb.jpg", thumb_buf.getvalue())
 
         assert state.plan is not None
-        (out_dir / "metadata.json").write_text(
-            json.dumps(
-                {
-                    "plan": state.plan.model_dump(),
-                    "context": state.context.model_dump() if state.context else None,
-                    "stage_timings": state.stage_timings,
-                },
-                indent=2,
-            )
+        metadata = json.dumps(
+            {
+                "plan": state.plan.model_dump(),
+                "context": state.context.model_dump() if state.context else None,
+                "stage_timings": state.stage_timings,
+            },
+            indent=2,
         )
-        state.artifacts["enhanced_path"] = str(out_dir / "enhanced.png")
-        state.artifacts["thumb_path"] = str(out_dir / "thumb.jpg")
+        storage.put(f"{prefix}/metadata.json", metadata.encode())
+
+        state.artifacts["enhanced_path"] = f"{prefix}/enhanced.png"
+        state.artifacts["thumb_path"] = f"{prefix}/thumb.jpg"
         return image

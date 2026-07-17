@@ -46,7 +46,10 @@ def test_delete_someone_elses_image(client, anon_client):
 def test_delete_removes_record_and_file(client):
     image_id = upload(client)
     with SessionLocal() as db:
-        original = Path(db.get(ImageRecord, image_id).original_path)
+        # rows store storage KEYS, resolved against storage_dir by LocalStorage
+        from app.core.config import settings
+
+        original = Path(settings.storage_dir) / db.get(ImageRecord, image_id).original_path
     assert original.exists()
 
     assert client.delete(f"/images/{image_id}").status_code == 200

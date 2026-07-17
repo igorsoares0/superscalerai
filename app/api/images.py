@@ -1,7 +1,6 @@
 import io
 import logging
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
@@ -12,6 +11,7 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.database.models import CreditLedger, ImageRecord, Job, User
 from app.database.session import get_db
+from app.services import storage
 
 router = APIRouter(prefix="/images", tags=["images"])
 logger = logging.getLogger(__name__)
@@ -44,11 +44,10 @@ async def upload_image(
         )
 
     ext = image.format.lower()
-    dest = Path(settings.storage_dir) / "uploads" / f"{uuid.uuid4()}.{ext}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+    key = f"uploads/{uuid.uuid4()}.{ext}"
+    storage.get_storage().put(key, data)
     row = ImageRecord(
-        user_id=user.id, original_path=str(dest), width=width, height=height
+        user_id=user.id, original_path=key, width=width, height=height
     )
     db.add(row)
     db.commit()
@@ -93,18 +92,18 @@ def delete_image(
             update(CreditLedger).where(CreditLedger.job_id.in_(job_ids)).values(job_id=None)
         )
         db.execute(delete(Job).where(Job.id.in_(job_ids)))
-    paths = [row.original_path, row.enhanced_path, row.thumb_path]
+    keys = [row.original_path, row.enhanced_path, row.thumb_path]
     db.delete(row)
     db.commit()
 
-    # files go last: a crash above leaves them orphaned on disk (harmless),
+    # files go last: a crash above leaves them orphaned in storage (harmless),
     # never a DB row pointing at nothing
-    for p in paths:
-        if p:
+    for key in keys:
+        if key:
             try:
-                Path(p).unlink(missing_ok=True)
-            except OSError:
-                logger.warning("couldn't remove file %s", p)
+                storage.get_storage().delete(key)
+            except Exception:  # noqa: BLE001 — best effort, row is already gone
+                logger.warning("couldn't remove file %s", key)
     return {"ok": True}
 
 

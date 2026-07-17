@@ -8,6 +8,18 @@ from PIL import Image
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def local_storage(monkeypatch):
+    """Tests never touch R2, even when the developer's .env has credentials."""
+    from app.core.config import settings
+    from app.services import storage
+
+    monkeypatch.setattr(settings, "r2_bucket", "")
+    storage.get_storage.cache_clear()
+    yield
+    storage.get_storage.cache_clear()
+
+
 @pytest.fixture
 def anon_client() -> TestClient:
     return TestClient(app)

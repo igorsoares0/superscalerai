@@ -5,6 +5,7 @@ function becomes an RQ/Celery task unchanged when we move to real workers.
 """
 
 import asyncio
+import io
 import logging
 import threading
 import time
@@ -15,7 +16,7 @@ from app.core.config import settings
 from app.database.models import ImageRecord, Job
 from app.database.session import SessionLocal
 from app.pipeline.factory import build_pipeline
-from app.services import credits
+from app.services import credits, storage
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def _run(job_id: str) -> None:
 
         start = time.monotonic()
         try:
-            image = Image.open(image_row.original_path)
+            image = Image.open(io.BytesIO(storage.get_storage().get(image_row.original_path)))
             pipeline = build_pipeline(job.id, job.preset, seed=job.seed, options=job.options)
             state = asyncio.run(pipeline.run(image))
 

@@ -31,7 +31,9 @@
       "mcp__plugin_resend_resend__list-domains",
       "mcp__plugin_resend_resend__create-api-key",
       "mcp__replicate__get_models_versions",
-      "Bash(curl -sL -o face_recognition_sface_2021dec.onnx \"https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx\")"
+      "Bash(curl -sL -o face_recognition_sface_2021dec.onnx \"https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx\")",
+      "mcp__plugin_cloudflare_cloudflare-api__execute",
+      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv add boto3)"
     ]
   }
 }

@@ -19,6 +19,34 @@ def test_upload_rejects_non_image(client):
     assert r.status_code == 415
 
 
+def test_download_original_roundtrip(client):
+    data = png_bytes()
+    r = client.post("/images/upload", files={"file": ("t.png", data, "image/png")})
+    image_id = r.json()["id"]
+
+    dl = client.get(f"/download/{image_id}/original")
+    assert dl.status_code == 200
+    assert dl.headers["content-type"] == "image/png"
+    assert dl.content == data
+
+    thumb = client.get(f"/download/{image_id}/thumb")  # falls back to original
+    assert thumb.status_code == 200
+
+    assert client.get(f"/download/{image_id}").status_code == 409  # not enhanced
+
+
+def test_download_missing_storage_object_is_404(client):
+    from app.database.models import ImageRecord
+    from app.database.session import SessionLocal
+
+    r = client.post("/images/upload", files={"file": ("t.png", png_bytes(), "image/png")})
+    image_id = r.json()["id"]
+    with SessionLocal() as db:
+        db.get(ImageRecord, image_id).original_path = "uploads/gone.png"
+        db.commit()
+    assert client.get(f"/download/{image_id}/original").status_code == 404
+
+
 def test_upload_rejects_oversized_image(client):
     from app.core.config import settings
 

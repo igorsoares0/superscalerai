@@ -62,13 +62,16 @@ swapped in at a single point (`app/jobs/queue.py`).
 
 ## Storage
 
-S3-compatible storage
+S3-compatible storage — Cloudflare R2 in production (chosen 2026-07-17:
+zero egress fees matter for a product that serves 20-30MB downloads; 10GB
+free tier covers launch).
 
-Examples:
-
-- Cloudflare R2
-- Backblaze B2
-- AWS S3
+Implemented in `app/services/storage.py`: DB rows store KEYS
+("uploads/x.png", "jobs/<id>/enhanced.png"), never paths. Backend chosen by
+config: all four `r2_*` settings set → S3Storage (boto3, endpoint
+`https://{account_id}.r2.cloudflarestorage.com`); otherwise LocalStorage
+under `storage_dir` (dev default — dev never touches the network).
+Downloads stream through the app (owner check stays; R2 egress is free).
 
 ## Frontend
 

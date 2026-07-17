@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./dev.db"
     replicate_api_token: str = ""
     storage_dir: Path = Path("storage")
+    # R2 (S3-compatible) object storage; all four set -> S3 backend,
+    # otherwise files stay on local disk (dev default)
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
     max_upload_mb: int = 25
     # Longest input edge. GPU cost grows ~quadratically with size (~$0.08 at
     # 1792px 2x) while the credit price caps at 4 credits, so huge inputs run
