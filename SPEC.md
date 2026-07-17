@@ -665,7 +665,7 @@ Provider: Replicate.
 |---------------------|----------------------------------|-----------|----------------------------------------------|
 | Generative Upscaler | `philz1337x/clarity-upscaler` | AGPL-3.0 | Commercial use OK. If the model code is MODIFIED and served, the modifications must be published (the SaaS itself is unaffected). Handles tiling and progressive scaling internally — the MVP stage delegates both to the model |
 | Pre-scale / fallback| `nightmareai/real-esrgan` | BSD-3 | No restrictions |
-| Captioner | `andreasjansson/blip-2` | BSD-3 | No restrictions |
+| Captioner | `lucataco/florence-2-large` | MIT | No restrictions. Replaced BLIP-2 (2026-07-16): BLIP-2's brand/gender caption errors steered generation into changing the subject's gender — validated A/B, `validation/outputs/caption-compare.png` |
 | Face Enhancer | `philz1337x/clarity-upscaler` (zoom-and-enhance) | AGPL-3.0 | Same model, run on the face crop alone — see Local Enhancers. No extra license needed |
 
 Face Enhancer note: specialist face-restoration models are license-blocked for commercial use (CodeFormer is S-Lab 1.0 non-commercial; GFPGAN is Apache 2.0 but bundles non-commercial third-party components). The MVP instead repairs small faces with the zoom-and-enhance strategy using the generative upscaler itself — validated to preserve identity while adding real detail.
@@ -857,8 +857,8 @@ Settings
 
 The current pipeline is the floor, not the ceiling. Improvement levers, in order of impact:
 
-1. Preset calibration — build a golden set (10–20 images per category), fix the seed and sweep parameters systematically (creativity, resemblance, dynamic/HDR, steps, tile size). Calibration is most of the quality gap to Magnific-class products.
-2. Better captioner — BLIP-2 gets brands/gender wrong (validated). Swap for Florence-2 or a modern VLM; later, region-level captions (face, background) to guide each area with the right prompt.
+1. Preset calibration — build a golden set (10–20 images per category), fix the seed and sweep parameters systematically (creativity, resemblance, dynamic/HDR, steps, tile size). Calibration is most of the quality gap to Magnific-class products. STARTED 2026-07-16: harness in `validation/calibrate.py` (SFace identity + downscaled PSNR + Laplacian detail, resumable sweep); portrait calibrated on a 3-image people set — identity falls off a cliff above creativity 0.20 (SFace 0.8→0.5 at 0.28) while detail barely grows, so portrait moved to creativity 0.20 / resemblance 1.2. Still open: golden sets for product/architecture/ai-generated, HDR/steps sweep, zoom-and-enhance re-validation with the harness.
+2. ~~Better captioner~~ DONE 2026-07-16 — Florence-2 replaced BLIP-2 ("Detailed Caption" level; "More Detailed" overflows SD 1.5's encoder). Still open: region-level captions (face, background) to guide each area with the right prompt; Florence-2's OCR/detection tasks could also replace the Analyzer's text heuristic.
 3. Identity quality gate — compare face embeddings (ArcFace) before/after; if similarity drops below threshold, auto-retry with lower creativity. Turns identity preservation into a measurable guarantee.
 4. Real post-processing — wavelet color match, grain matching for protected regions (deterministic patches read softer than enhanced surroundings), calibrated sharpening.
 5. Prompt + LoRA bundles per preset — Clarity accepts `lora_links` and `custom_sd_model`; skin-texture LoRAs for Portrait, material LoRAs for Product.

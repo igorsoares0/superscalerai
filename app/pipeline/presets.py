@@ -26,11 +26,16 @@ class Preset(BaseModel):
 PRESETS: dict[str, Preset] = {
     # skin terms validated 2026-07-16 (A/B vs epicrealism checkpoint, which
     # invented moles and broke on degraded dark skin — rejected): they cut
-    # the waxy look without inventing features
+    # the waxy look without inventing features.
+    # denoise/guidance calibrated 2026-07-16 on the golden set
+    # (validation/calibrate.py): face identity falls off a cliff above
+    # creativity 0.20 (SFace 0.8 -> 0.5 at 0.28, different-person territory
+    # at 0.45) while detail barely grows; higher resemblance helps identity
+    # at zero detail cost
     "portrait": Preset(
         name="portrait",
-        denoise=0.28,
-        guidance=0.8,
+        denoise=0.20,
+        guidance=1.2,
         local_enhancers=["face"],
         style_terms=", detailed skin texture, skin pores, natural skin",
         negative_terms=", plastic skin, waxy skin, airbrushed, smooth skin",
