@@ -6,14 +6,15 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.config import settings
 from app.database.models import Base
+from app.database.session import sqlalchemy_url
 
 config = context.config
 
 # Never hardcode the URL in alembic.ini: dev/test/prod pick it up from the
-# same DATABASE_URL the app uses.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# same DATABASE_URL the app uses (same driver normalization too). The %%
+# escape protects configparser interpolation from % in passwords.
+config.set_main_option("sqlalchemy.url", sqlalchemy_url().replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)

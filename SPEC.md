@@ -41,7 +41,12 @@ The first release should already provide a sophisticated processing pipeline whi
 
 ## Database
 
-Neon PostgreSQL
+Neon PostgreSQL (production; validated 2026-07-17 — all migrations run
+clean, drift check empty, credit debit roundtrip ok). Dev and tests stay on
+SQLite. `sqlalchemy_url()` in `app/database/session.py` pins the psycopg v3
+driver onto Neon-style postgres:// URLs; `pool_pre_ping` covers Neon's
+autosuspend. Use the DIRECT (non-pooler) connection string: Alembic needs
+it, and at our volume it serves the app too.
 
 ## Queue
 

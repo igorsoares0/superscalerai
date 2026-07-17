@@ -33,7 +33,8 @@
       "mcp__replicate__get_models_versions",
       "Bash(curl -sL -o face_recognition_sface_2021dec.onnx \"https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx\")",
       "mcp__plugin_cloudflare_cloudflare-api__execute",
-      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv add boto3)"
+      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv add boto3)",
+      "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl uv add \"psycopg[binary]\")"
     ]
   }
 }
