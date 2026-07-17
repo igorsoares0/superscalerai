@@ -13,8 +13,6 @@ from app.pipeline.base import PipelineStage, PipelineState
 from app.providers.base import AIProvider
 from app.providers.replicate import ReplicateProvider
 
-NEGATIVE_PROMPT = "(worst quality, low quality, normal quality:2) JuggernautNegative-neg"
-
 
 class GenerativeUpscaler(PipelineStage):
     name = "generative_upscaler"
@@ -35,7 +33,7 @@ class GenerativeUpscaler(PipelineStage):
             {
                 "image": input_url,
                 "prompt": plan.prompt,
-                "negative_prompt": NEGATIVE_PROMPT,
+                "negative_prompt": plan.negative_prompt,
                 "creativity": plan.denoise,
                 "resemblance": plan.guidance,
                 "dynamic": plan.hdr,

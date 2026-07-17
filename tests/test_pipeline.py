@@ -33,5 +33,7 @@ async def test_pipeline_plans_from_caption_and_preset():
     assert plan.seed == 42
     assert plan.denoise == 0.28  # portrait preset
     assert "a test image" in plan.prompt
+    assert "skin pores" in plan.prompt  # portrait skin terms (validated 2026-07-16)
+    assert "plastic skin" in plan.negative_prompt
     assert state.color_reference is not None
     assert set(state.stage_timings) == {"analyzer", "captioner", "planner", "preprocessor", "post_processor"}

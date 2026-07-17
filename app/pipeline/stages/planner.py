@@ -14,7 +14,7 @@ from PIL import Image
 
 from app.pipeline.base import PipelineStage, PipelineState
 from app.pipeline.context import ExecutionPlan
-from app.pipeline.presets import BASE_PROMPT, PRESETS
+from app.pipeline.presets import BASE_NEGATIVE, BASE_PROMPT, PRESETS
 
 
 class Planner(PipelineStage):
@@ -55,7 +55,8 @@ class Planner(PipelineStage):
             denoise=self.options.get("creativity", self.preset.denoise),
             guidance=self.options.get("resemblance", self.preset.guidance),
             hdr=self.options.get("hdr", 6.0),
-            prompt=BASE_PROMPT.format(caption=caption),
+            prompt=BASE_PROMPT.format(caption=caption) + self.preset.style_terms,
+            negative_prompt=BASE_NEGATIVE + self.preset.negative_terms,
             seed=self.seed,
             local_enhancers=[
                 e for e in self.preset.local_enhancers

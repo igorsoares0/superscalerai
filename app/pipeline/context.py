@@ -32,6 +32,7 @@ class ExecutionPlan(BaseModel):
     guidance: float
     hdr: float = 6.0  # Clarity `dynamic`, its default
     prompt: str
+    negative_prompt: str = ""
     seed: int
     local_enhancers: list[str] = Field(default_factory=list)
     protect_regions: list[Box] = Field(default_factory=list)

@@ -81,3 +81,12 @@ async def test_planner_defaults_without_options():
     assert plan.guidance == 0.8
     assert plan.hdr == 6.0  # Clarity's own default
     assert "a red car" in plan.prompt
+
+
+async def test_non_portrait_presets_keep_base_prompts():
+    from app.pipeline.presets import BASE_NEGATIVE
+
+    state = make_state()
+    await Planner("product").process(state.original, state)
+    assert "skin" not in state.plan.prompt
+    assert state.plan.negative_prompt == BASE_NEGATIVE
