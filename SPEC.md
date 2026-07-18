@@ -188,6 +188,26 @@ Download
 - Logout
 - Password Reset
 
+### Rate limiting (added 2026-07-18)
+
+In-memory sliding window (`app/services/ratelimit.py`), single-instance by
+design like the job runner — moves to Redis only if we ever run more than
+one instance. Enforcement lives in `app/api/ratelimit.py`; 429 responses
+carry `Retry-After` and a generic message (never the exact limit). Limits
+(all configurable in `Settings`):
+
+| Endpoint | Key(s) | Default | Why |
+|---|---|---|---|
+| `/auth/login` | IP **and** email | 5 / 15 min | brute-force; success clears the email key so a fumbling owner isn't locked out |
+| `/auth/register` | IP | 3 / hour | every signup mints bonus credits = real GPU money |
+| `/auth/forgot` | IP **and** email | 3 / hour | every hit sends a real email on our domain |
+| `/images/upload` | user id | 20 / min | bandwidth/storage abuse |
+
+`X-Forwarded-For` is only honored when `trust_proxy_headers=true` (set it on
+the production host, whose proxy overwrites the header) — otherwise any
+client could forge an IP and dodge every per-IP limit. `rate_limit_enabled`
+exists as an off switch for local debugging.
+
 ---
 
 ## Dashboard

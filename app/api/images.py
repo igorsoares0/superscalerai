@@ -7,6 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from app.api import ratelimit
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.database.models import CreditLedger, ImageRecord, Job, User
@@ -25,6 +26,11 @@ async def upload_image(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    ratelimit.enforce(
+        f"upload:user:{user.id}",
+        settings.upload_rate_limit,
+        settings.upload_rate_window_minutes,
+    )
     data = await file.read()
     if len(data) > settings.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, f"file exceeds {settings.max_upload_mb}MB")

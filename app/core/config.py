@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     # at a loss besides being slow/flaky on the provider.
     max_image_px: int = 3072
     max_concurrent_jobs: int = 4  # Replicate 429s around 8 parallel predictions
+    rate_limit_enabled: bool = True
+    trust_proxy_headers: bool = False  # True only behind a proxy that overwrites X-Forwarded-For
+    login_rate_limit: int = 5  # per IP and per email (brute-force)
+    login_rate_window_minutes: int = 15
+    register_rate_limit: int = 3  # per IP; every signup mints bonus credits (real GPU money)
+    register_rate_window_minutes: int = 60
+    forgot_rate_limit: int = 3  # per IP and per email; every hit sends a real email
+    forgot_rate_window_minutes: int = 60
+    upload_rate_limit: int = 20  # per user
+    upload_rate_window_minutes: int = 1
     session_ttl_days: int = 30
     signup_bonus_credits: int = 3
     cookie_secure: bool = False  # True behind HTTPS in production

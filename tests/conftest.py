@@ -20,6 +20,16 @@ def local_storage(monkeypatch):
     storage.get_storage.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def fresh_rate_limits():
+    """Each test starts with clean rate-limit counters (they'd otherwise leak
+    across tests: every test client shares the same fake IP)."""
+    from app.services.ratelimit import limiter
+
+    limiter.reset()
+    yield
+
+
 @pytest.fixture
 def anon_client() -> TestClient:
     return TestClient(app)
