@@ -2,6 +2,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 
 
@@ -15,7 +16,7 @@ def test_register_login_logout_flow():
 
     r = client.post("/auth/register", json=creds)
     assert r.status_code == 201
-    assert r.json()["credits"] == 3  # signup bonus
+    assert r.json()["credits"] == settings.signup_bonus_credits
     assert "session" in client.cookies
 
     assert client.get("/auth/me").json()["email"] == creds["email"]

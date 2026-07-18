@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     upload_rate_limit: int = 20  # per user
     upload_rate_window_minutes: int = 1
     session_ttl_days: int = 30
-    signup_bonus_credits: int = 3
+    # must cover one job at the top credit tier: the trial has to work with
+    # whatever photo the user actually has (a phone photo lands on the 8 tier)
+    signup_bonus_credits: int = 8
     cookie_secure: bool = False  # True behind HTTPS in production
     paddle_environment: str = "sandbox"  # "sandbox" | "production"
     paddle_api_key: str = ""  # server-side API key (cancel subscriptions etc.)

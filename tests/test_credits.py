@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from app.core.config import settings
 from app.database.models import CreditLedger, ImageRecord, Job, User
 from app.database.session import SessionLocal
 from app.services import credits
@@ -78,6 +79,14 @@ def test_job_creation_returns_402_without_credits(client):
 
 def test_credits_endpoint_shows_signup_bonus(client):
     body = client.get("/credits").json()
-    assert body["balance"] == 3
+    assert body["balance"] == settings.signup_bonus_credits
     assert body["ledger"][0]["reason"] == "signup_bonus"
-    assert body["ledger"][0]["delta"] == 3
+    assert body["ledger"][0]["delta"] == settings.signup_bonus_credits
+
+
+def test_signup_bonus_covers_the_biggest_allowed_job():
+    """The trial must work with whatever photo the user has: a fresh account
+    has to afford one job at the largest input the upload cap accepts."""
+    assert settings.signup_bonus_credits >= credits.job_cost(
+        settings.max_image_px, settings.max_image_px
+    )

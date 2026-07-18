@@ -288,6 +288,12 @@ Tiers keep climbing because GPU cost grows ~quadratically with output size
 | ≤4096px | 4 |
 | >4096px | 8 |
 
+Signup bonus: 8 credits (raised from 3 on 2026-07-18, user-approved). It
+must always cover one job at the top tier — the trial has to work with
+whatever photo the user actually has, and a phone photo lands on the 8
+tier (a test guards this invariant against future table changes). Abuse is
+bounded by the register rate limit, not by keeping the bonus small.
+
 ---
 
 # Pipeline Philosophy

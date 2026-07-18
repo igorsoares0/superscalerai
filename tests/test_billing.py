@@ -151,7 +151,10 @@ def test_first_charge_activates_plan(client):
     credits = client.get("/credits").json()
     assert credits["balance"] == BASIC  # reset, not signup bonus + allowance
     renewal = [e for e in credits["ledger"] if e["reason"] == "plan_renewal"]
-    assert len(renewal) == 1 and renewal[0]["delta"] == BASIC - 3  # bonus absorbed
+    assert (
+        len(renewal) == 1
+        and renewal[0]["delta"] == BASIC - settings.signup_bonus_credits  # bonus absorbed
+    )
 
     current = client.get("/billing/plans").json()["current"]
     assert current["plan"] == "basic"
@@ -375,7 +378,7 @@ def test_other_apps_events_ignored(client):
     uid = user_id_of(client)
     r = post_webhook(client, completed_event(uid, app="someother"))
     assert r.status_code == 200 and r.json()["status"] == "ignored"
-    assert client.get("/credits").json()["balance"] == 3
+    assert client.get("/credits").json()["balance"] == settings.signup_bonus_credits
 
 
 def test_other_event_types_acknowledged(client):
@@ -383,4 +386,4 @@ def test_other_event_types_acknowledged(client):
     event["event_type"] = "transaction.created"
     r = post_webhook(client, event)
     assert r.status_code == 200 and r.json()["status"] == "ignored"
-    assert client.get("/credits").json()["balance"] == 3
+    assert client.get("/credits").json()["balance"] == settings.signup_bonus_credits

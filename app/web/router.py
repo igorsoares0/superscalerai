@@ -53,7 +53,11 @@ def library(request: Request):
 
 @router.get("/login", response_class=HTMLResponse)
 def login(request: Request):
-    return templates.TemplateResponse(request, "login.html", {"page": "login"})
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"page": "login", "signup_bonus_credits": settings.signup_bonus_credits},
+    )
 
 
 @router.get("/reset", response_class=HTMLResponse)
