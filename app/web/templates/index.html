@@ -42,7 +42,7 @@
     <div id="controls" class="mt-5">
       <div class="grid gap-2 sm:grid-cols-4" id="preset-row">
         {% for p in presets %}
-        <button data-preset="{{ p.id }}" data-creativity="{{ p.creativity }}" data-resemblance="{{ p.resemblance }}"
+        <button data-preset="{{ p.id }}" data-creativity="{{ p.creativity }}" data-resemblance="{{ p.resemblance }}" data-hdr="{{ p.hdr }}"
           class="preset-chip rounded-xl border border-line bg-panel px-4 py-3 text-left transition-colors hover:bg-raise">
           <span class="block text-sm font-medium">{{ p.label }}</span>
           <span class="block text-xs text-mute">{{ p.hint }}</span>

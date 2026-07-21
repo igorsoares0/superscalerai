@@ -47,9 +47,12 @@ GOLDEN = [
     ("degraded", HERE / "outputs" / "20260711-001642-portrait" / "before.png"),
 ]
 
-CREATIVITY = [0.20, 0.28, 0.35, 0.45]
-RESEMBLANCE = [0.6, 0.9, 1.2]
-HDR = [6]
+# 2026-07-16 sweep: creativity/resemblance grid at hdr=6, steps=18.
+# 2026-07-21 sweep: hdr/steps grid at the calibrated portrait point.
+CREATIVITY = [0.20]
+RESEMBLANCE = [1.2]
+HDR = [3, 6, 9]
+STEPS = [12, 18, 24, 30]
 
 
 def load_env() -> None:
@@ -113,7 +116,10 @@ async def run_sweep() -> list[dict]:
     OUT.mkdir(parents=True, exist_ok=True)
     results_path = OUT / "results.json"
     results: list[dict] = json.loads(results_path.read_text()) if results_path.exists() else []
-    done = {(r["image"], r["creativity"], r["resemblance"], r["hdr"]) for r in results}
+    done = {
+        (r["image"], r["creativity"], r["resemblance"], r["hdr"], r.get("steps", 18))
+        for r in results
+    }
 
     for name, path in GOLDEN:
         original = Image.open(path).convert("RGB")
@@ -130,8 +136,10 @@ async def run_sweep() -> list[dict]:
         caption = parse_caption(pred["output"]) or "portrait"
         print(f"{name}: caption ok ({len(caption)} chars)")
 
-        for creativity, resemblance, hdr in itertools.product(CREATIVITY, RESEMBLANCE, HDR):
-            key = (name, creativity, resemblance, hdr)
+        for creativity, resemblance, hdr, steps in itertools.product(
+            CREATIVITY, RESEMBLANCE, HDR, STEPS
+        ):
+            key = (name, creativity, resemblance, hdr, steps)
             if key in done:
                 continue
             pred = await provider.run(
@@ -145,12 +153,12 @@ async def run_sweep() -> list[dict]:
                     "dynamic": hdr,
                     "scale_factor": 2,
                     "seed": SEED,
-                    "num_inference_steps": 18,
+                    "num_inference_steps": steps,
                 },
             )
             data = await provider.download(pred["output"][0])
             result = Image.open(io.BytesIO(data)).convert("RGB")
-            out_name = f"{name}-c{creativity}-r{resemblance}-h{hdr}.png"
+            out_name = f"{name}-c{creativity}-r{resemblance}-h{hdr}-s{steps}.png"
             result.save(OUT / out_name)
 
             row = {
@@ -158,6 +166,7 @@ async def run_sweep() -> list[dict]:
                 "creativity": creativity,
                 "resemblance": resemblance,
                 "hdr": hdr,
+                "steps": steps,
                 "file": out_name,
                 "identity": identity_similarity(original, result),
                 "fidelity": round(fidelity_psnr(original, result), 2),
@@ -166,7 +175,7 @@ async def run_sweep() -> list[dict]:
             }
             results.append(row)
             results_path.write_text(json.dumps(results, indent=1))
-            print(f"  c={creativity} r={resemblance} h={hdr}: "
+            print(f"  c={creativity} r={resemblance} h={hdr} s={steps}: "
                   f"id={row['identity'] and round(row['identity'], 3)} "
                   f"psnr={row['fidelity']} detail={row['detail']} ({row['gpu_s']}s)")
     return results

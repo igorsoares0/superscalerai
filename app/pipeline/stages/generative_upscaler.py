@@ -39,7 +39,9 @@ class GenerativeUpscaler(PipelineStage):
                 "dynamic": plan.hdr,
                 "scale_factor": plan.scale_factor,
                 "seed": plan.seed,
-                "num_inference_steps": 18,
+                # 24 calibrated 2026-07-21 (hdr x steps sweep): best
+                # identity/PSNR at every hdr, ~same GPU time as 18
+                "num_inference_steps": 24,
             },
         )
         assert isinstance(self.provider, ReplicateProvider)

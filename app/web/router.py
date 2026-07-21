@@ -31,6 +31,7 @@ def workspace(request: Request):
             "hint": PRESET_LABELS[key][1],
             "creativity": PRESETS[key].denoise,
             "resemblance": PRESETS[key].guidance,
+            "hdr": PRESETS[key].hdr,
         }
         for key in PRESETS
     ]

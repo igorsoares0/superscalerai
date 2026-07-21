@@ -100,8 +100,11 @@ class LocalEnhancers(PipelineStage):
             "generative-upscaler",
             {
                 "image": url,
-                "creativity": 0.25,
-                "resemblance": 0.9,
+                # calibrated 2026-07-21 (validation/calibrate_faces.py): identity
+                # collapses as creativity rises (SFace 0.92 @ 0.10 vs 0.65 @ 0.25,
+                # with visible skin-tone drift); 0.10 still out-details the input
+                "creativity": 0.10,
+                "resemblance": 1.2,
                 "scale_factor": 4,
                 "seed": seed,
                 "num_inference_steps": 18,

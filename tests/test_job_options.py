@@ -79,7 +79,7 @@ async def test_planner_defaults_without_options():
     plan = state.plan
     assert plan.denoise == 0.20  # portrait preset (calibrated 2026-07-16)
     assert plan.guidance == 1.2
-    assert plan.hdr == 6.0  # Clarity's own default
+    assert plan.hdr == 3.0  # portrait preset (hdr/steps sweep 2026-07-21)
     assert "a red car" in plan.prompt
 
 

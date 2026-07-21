@@ -54,7 +54,7 @@ class Planner(PipelineStage):
             passes=passes,
             denoise=self.options.get("creativity", self.preset.denoise),
             guidance=self.options.get("resemblance", self.preset.guidance),
-            hdr=self.options.get("hdr", 6.0),
+            hdr=self.options.get("hdr", self.preset.hdr),
             prompt=BASE_PROMPT.format(caption=caption) + self.preset.style_terms,
             negative_prompt=BASE_NEGATIVE + self.preset.negative_terms,
             seed=self.seed,

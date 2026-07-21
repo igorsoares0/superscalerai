@@ -103,17 +103,17 @@ function selectPreset(preset) {
 
 /* ---- advanced sliders ---- */
 
-const HDR_DEFAULT = 6;
-let advDefaults = { creativity: 0, resemblance: 0 };
+let advDefaults = { creativity: 0, resemblance: 0, hdr: 6 };
 
 function resetAdvanced(chip) {
   advDefaults = {
     creativity: parseFloat(chip.dataset.creativity),
     resemblance: parseFloat(chip.dataset.resemblance),
+    hdr: parseFloat(chip.dataset.hdr),
   };
   els.advCreativity.value = advDefaults.creativity;
   els.advResemblance.value = advDefaults.resemblance;
-  els.advHdr.value = HDR_DEFAULT;
+  els.advHdr.value = advDefaults.hdr;
   els.advPrompt.value = "";
   syncAdvancedLabels();
 }
@@ -136,7 +136,7 @@ function advancedOverrides() {
   const hdr = parseFloat(els.advHdr.value);
   if (creativity !== advDefaults.creativity) out.creativity = creativity;
   if (resemblance !== advDefaults.resemblance) out.resemblance = resemblance;
-  if (hdr !== HDR_DEFAULT) out.hdr = hdr;
+  if (hdr !== advDefaults.hdr) out.hdr = hdr;
   const prompt = els.advPrompt.value.trim();
   if (prompt) out.prompt_extra = prompt;
   return out;

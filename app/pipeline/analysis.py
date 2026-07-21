@@ -1,9 +1,10 @@
 """CPU image analysis used by the Analyzer stage. No GPU, no network.
 
 Face detection: OpenCV YuNet (MIT-licensed ONNX, bundled in resources/).
-Text detection: morphological-gradient heuristic — good enough to trigger
-protection on logos/labels over flat backgrounds; swap for a DB/EAST text
-model when precision matters (false positives only cost a protected patch).
+Text detection: morphological-gradient heuristic — since 2026-07-21 only
+the FALLBACK for when Florence-2's OCR call fails (see Captioner); good
+enough to trigger protection on logos/labels over flat backgrounds
+(false positives only cost a protected patch).
 """
 
 import math
@@ -74,6 +75,29 @@ def detect_text_regions(bgr: np.ndarray, exclude: list[Box] | None = None) -> li
             continue
         pad = ch // 2
         boxes.append(_clamp_box(x - pad, y - pad, x + cw + pad, y + ch + pad, w, h))
+    return _merge_overlapping(boxes)
+
+
+def ocr_text_regions(pairs: list[tuple[list[float], str]], w: int, h: int) -> list[Box]:
+    """Florence-2 'OCR with Region' (quad, label) pairs -> protect boxes.
+
+    Florence hallucinates tiny labels of non-Latin digits on textless
+    images (observed 2026-07-21 on the validation photos), so a region
+    only qualifies with >=2 real glyphs (letters or ASCII digits) and
+    non-trivial area. The floor is 10x lower than the heuristic's: OCR
+    quads are tight around glyphs (a real chest logo measured 0.0003).
+    """
+    boxes: list[Box] = []
+    for quad, label in pairs:
+        text = label.removeprefix("</s>").strip()
+        if sum(c.isalpha() or (c.isascii() and c.isdigit()) for c in text) < 2:
+            continue
+        xs, ys = quad[0::2], quad[1::2]
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+        if (x1 - x0) * (y1 - y0) < 0.0001 * w * h:
+            continue
+        pad = (y1 - y0) / 2  # glyph edges need margin, like the heuristic
+        boxes.append(_clamp_box(x0 - pad, y0 - pad, x1 + pad, y1 + pad, w, h))
     return _merge_overlapping(boxes)
 
 

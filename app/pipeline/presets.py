@@ -19,6 +19,7 @@ class Preset(BaseModel):
     denoise: float
     guidance: float
     local_enhancers: list[str]
+    hdr: float = 6.0  # Clarity's `dynamic` default
     style_terms: str = ""  # appended to the positive prompt
     negative_terms: str = ""  # appended to the negative prompt
 
@@ -32,11 +33,16 @@ PRESETS: dict[str, Preset] = {
     # creativity 0.20 (SFace 0.8 -> 0.5 at 0.28, different-person territory
     # at 0.45) while detail barely grows; higher resemblance helps identity
     # at zero detail cost
+    # hdr calibrated 2026-07-21 (hdr x steps sweep on the golden set):
+    # identity rises monotonically as hdr drops (SFace +0.07..0.09 at 3
+    # vs 6) with equal-or-better detail; other presets keep 6 — no
+    # golden set to validate them yet
     "portrait": Preset(
         name="portrait",
         denoise=0.20,
         guidance=1.2,
         local_enhancers=["face"],
+        hdr=3.0,
         style_terms=", detailed skin texture, skin pores, natural skin",
         negative_terms=", plastic skin, waxy skin, airbrushed, smooth skin",
     ),

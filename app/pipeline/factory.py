@@ -9,6 +9,7 @@ from app.pipeline.stages import (
     PostProcessor,
     Preprocessor,
 )
+from app.pipeline.presets import PRESETS
 from app.providers.base import AIProvider
 from app.providers.replicate import ReplicateProvider
 
@@ -25,7 +26,8 @@ def build_pipeline(
     return PipelineEngine(
         [
             Analyzer(),
-            Captioner(provider),
+            # the OCR pass only pays off where its boxes get used
+            Captioner(provider, ocr="protect_text" in PRESETS[preset].local_enhancers),
             Planner(preset, scale_factor, seed, options),
             Preprocessor(),
             GenerativeUpscaler(provider),

@@ -49,8 +49,14 @@ def test_color_match_keeps_high_frequency_detail():
     assert contrast > 15
 
 
-async def test_post_processor_without_reference_is_identity():
+async def test_post_processor_without_reference_skips_color_match():
+    """No reference -> no color match; the (gated) sharpen still runs but
+    must leave a smooth gradient essentially untouched."""
     img = smooth_reference()
     state = PipelineState(original=img)
     out = await PostProcessor().process(img, state)
-    assert out is img
+    delta = np.abs(
+        np.asarray(out, dtype=np.float32) - np.asarray(img, dtype=np.float32)
+    ).mean()
+    assert delta < 1.0
+    assert "seams" not in state.artifacts
