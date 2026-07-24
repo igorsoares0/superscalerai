@@ -1,7 +1,7 @@
 import logging
 import time
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.pipeline.base import PipelineStage, PipelineState
 
@@ -15,6 +15,13 @@ class PipelineEngine:
         self.stages = stages
 
     async def run(self, image: Image.Image) -> PipelineState:
+        # Normalize EXIF orientation ONCE, before anything reads the image:
+        # state.original and every stage must share one coordinate space.
+        # Transposing mid-pipeline (as the Preprocessor used to) left the
+        # Analyzer's face/text boxes and state.original in the un-rotated
+        # space while later stages worked rotated, so the Local Enhancers
+        # composited patches in the wrong place on rotated phone photos.
+        image = ImageOps.exif_transpose(image)
         state = PipelineState(original=image.copy())
         current = image
         for stage in self.stages:

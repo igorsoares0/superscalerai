@@ -1,9 +1,9 @@
 """Stage 4: Preprocessor — worker CPU (SPEC.md).
 
 Takes the color/tone snapshot of the original before any tonal
-normalization, used later by the Post Processor's color match. The
-snapshot comes AFTER exif_transpose so it stays geometrically aligned
-with everything downstream.
+normalization, used later by the Post Processor's color match. Orientation
+is already normalized at pipeline entry (engine.run), so the snapshot stays
+geometrically aligned with everything downstream.
 
 Denoise: non-local means, strength driven by the Analyzer's measured
 noise level. Cleaning before the generative pass keeps Clarity from
@@ -14,7 +14,7 @@ clean image only eats real texture the upscaler could amplify.
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 
 from app.pipeline.base import PipelineStage, PipelineState
 
@@ -30,7 +30,6 @@ class Preprocessor(PipelineStage):
     name = "preprocessor"
 
     async def process(self, image: Image.Image, state: PipelineState) -> Image.Image:
-        image = ImageOps.exif_transpose(image)
         image = image.convert("RGB")
         state.color_reference = image.copy()
 

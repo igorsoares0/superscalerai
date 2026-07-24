@@ -8,14 +8,17 @@ enough to trigger protection on logos/labels over flat backgrounds
 """
 
 import math
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from app.pipeline.context import Box
 
 YUNET_PATH = Path(__file__).parent / "resources" / "face_detection_yunet_2023mar.onnx"
+SFACE_PATH = Path(__file__).parent / "resources" / "face_recognition_sface_2021dec.onnx"
 
 # margin around detected faces: zoom-and-enhance needs surrounding context
 # (hair, hats) to reconstruct the region coherently
@@ -138,3 +141,41 @@ def noise_level(bgr: np.ndarray) -> str:
     if sigma < 6:
         return "medium"
     return "high"
+
+
+# ---- identity (SFace) -------------------------------------------------------
+# Ported from validation/calibrate.py so the in-pipeline identity gate and the
+# calibration harness score identity the same way.
+
+
+@lru_cache(maxsize=1)
+def _sface_recognizer():
+    return cv2.FaceRecognizerSF_create(str(SFACE_PATH), "")
+
+
+def _largest_face_row(bgr: np.ndarray) -> np.ndarray | None:
+    """Raw YuNet detection row (bbox + 5 landmarks) for the biggest face.
+    SFace's alignCrop needs the landmarks, which detect_faces discards."""
+    h, w = bgr.shape[:2]
+    detector = cv2.FaceDetectorYN_create(str(YUNET_PATH), "", (w, h))
+    _, faces = detector.detect(bgr)
+    if faces is None or len(faces) == 0:
+        return None
+    return max(faces, key=lambda f: f[2] * f[3])
+
+
+def identity_similarity(before: Image.Image, after: Image.Image) -> float | None:
+    """SFace cosine similarity between the largest face in `before` and in
+    `after` (`after` is first resized to `before`'s size). None when either
+    image has no detectable face — the caller treats that as "can't tell"."""
+    recognizer = _sface_recognizer()
+    after = after.resize(before.size, Image.LANCZOS)
+    embeddings = []
+    for img in (before, after):
+        arr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+        row = _largest_face_row(arr)
+        if row is None:
+            return None
+        aligned = recognizer.alignCrop(arr, row)
+        embeddings.append(recognizer.feature(aligned).copy())
+    return float(recognizer.match(embeddings[0], embeddings[1], cv2.FaceRecognizerSF_FR_COSINE))

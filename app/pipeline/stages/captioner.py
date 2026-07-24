@@ -44,7 +44,6 @@ class Captioner(PipelineStage):
         buf = io.BytesIO()
         image.convert("RGB").save(buf, format="JPEG", quality=90)
         url = await self.provider.upload(buf.getvalue(), "input.jpg")
-        state.artifacts["input_url"] = url
         assert state.context is not None
 
         caption_call = self.provider.run("captioner", {"image": url, "task_input": TASK})

@@ -7,8 +7,9 @@ Both strategies validated on 2026-07-10:
   generation-time masks are NOT used (Clarity's `mask` disables
   upscaling). If Real-ESRGAN fails, fall back to Lanczos — a softer
   patch beats failing a job whose generative pass already succeeded.
-- face_regions (small faces): zoom-and-enhance — run the generative
-  upscaler on the face crop alone, composite back supersampled.
+- face_regions: zoom-and-enhance — run the generative upscaler on the face
+  crop alone, composite back supersampled. An identity gate measures SFace
+  similarity vs the original crop and retries at lower creativity if it drifts.
 """
 
 import io
@@ -17,11 +18,22 @@ import math
 
 from PIL import Image, ImageDraw, ImageFilter
 
+from app.pipeline import analysis
 from app.pipeline.base import PipelineStage, PipelineState
 from app.pipeline.context import Box
 from app.providers.base import AIProvider
 
 logger = logging.getLogger(__name__)
+
+# identity gate (item 3, 2026-07-24): the face pass at face_creativity is
+# validated safe (SFace ~0.92 @ 0.10), but a degraded or unusual face can still
+# drift. Below IDENTITY_MIN we retry once at lower creativity — favouring
+# fidelity over new detail — and keep the best-scoring result. Mostly a measured
+# backstop: the similarity is recorded per face regardless. The threshold wants
+# GPU calibration (validation's different-person floor is 0.363).
+IDENTITY_MIN = 0.5
+IDENTITY_MAX_RETRIES = 1
+IDENTITY_RETRY_FACTOR = 0.5
 
 
 def feathered_mask(size: tuple[int, int], pad: int = 20, radius: int = 60, blur: int = 20) -> Image.Image:
@@ -51,7 +63,9 @@ class LocalEnhancers(PipelineStage):
             image = await self._composite_protected(image, original, box, sx, sy)
 
         for box in plan.face_regions:
-            image = await self._zoom_and_enhance(image, original, box, sx, sy, plan.seed)
+            image = await self._zoom_and_enhance(
+                image, original, box, sx, sy, plan.seed, plan.face_creativity, state
+            )
         return image
 
     async def _composite_protected(
@@ -89,10 +103,7 @@ class LocalEnhancers(PipelineStage):
         data = await self.provider.download(pred["output"])  # type: ignore[attr-defined]
         return Image.open(io.BytesIO(data)).convert("RGB")
 
-    async def _zoom_and_enhance(
-        self, image: Image.Image, original: Image.Image, box: Box, sx: float, sy: float, seed: int
-    ) -> Image.Image:
-        crop = original.crop(box)
+    async def _face_pass(self, crop: Image.Image, seed: int, creativity: float) -> Image.Image:
         buf = io.BytesIO()
         crop.convert("RGB").save(buf, format="PNG")
         url = await self.provider.upload(buf.getvalue(), "face.png")
@@ -100,10 +111,11 @@ class LocalEnhancers(PipelineStage):
             "generative-upscaler",
             {
                 "image": url,
-                # calibrated 2026-07-21 (validation/calibrate_faces.py): identity
-                # collapses as creativity rises (SFace 0.92 @ 0.10 vs 0.65 @ 0.25,
-                # with visible skin-tone drift); 0.10 still out-details the input
-                "creativity": 0.10,
+                # face creativity is independent of the main (background) pass:
+                # calibrated 2026-07-21 (validation/calibrate_faces.py) to 0.10,
+                # where identity holds (SFace 0.92 @ 0.10 vs 0.65 @ 0.25, with
+                # visible skin-tone drift) while still out-detailing the input
+                "creativity": creativity,
                 "resemblance": 1.2,
                 "scale_factor": 4,
                 "seed": seed,
@@ -111,7 +123,48 @@ class LocalEnhancers(PipelineStage):
             },
         )
         data = await self.provider.download(pred["output"][0])  # type: ignore[attr-defined]
-        enhanced = Image.open(io.BytesIO(data)).convert("RGB")
+        return Image.open(io.BytesIO(data)).convert("RGB")
+
+    async def _zoom_and_enhance(
+        self,
+        image: Image.Image,
+        original: Image.Image,
+        box: Box,
+        sx: float,
+        sy: float,
+        seed: int,
+        creativity: float,
+        state: PipelineState,
+    ) -> Image.Image:
+        crop = original.crop(box)
+        enhanced = await self._face_pass(crop, seed, creativity)
+
+        # identity gate: step creativity down while identity is below the floor,
+        # keeping the best-scoring face. None similarity = no detectable face, so
+        # we can't tell and leave the first result alone.
+        sim = analysis.identity_similarity(crop, enhanced)
+        attempts = 0
+        while sim is not None and sim < IDENTITY_MIN and attempts < IDENTITY_MAX_RETRIES:
+            attempts += 1
+            creativity *= IDENTITY_RETRY_FACTOR
+            candidate = await self._face_pass(crop, seed, creativity)
+            candidate_sim = analysis.identity_similarity(crop, candidate)
+            if candidate_sim is None:
+                break
+            if candidate_sim > sim:
+                enhanced, sim = candidate, candidate_sim
+        state.artifacts.setdefault("face_identity", []).append(
+            {
+                "box": list(box),
+                "similarity": round(sim, 3) if sim is not None else None,
+                "attempts": attempts,
+            }
+        )
+        if sim is not None and sim < IDENTITY_MIN:
+            logger.warning(
+                "identity gate: face %s stayed at %.3f (< %.2f) after %d retries",
+                box, sim, IDENTITY_MIN, attempts,
+            )
 
         target = (int(box[0] * sx), int(box[1] * sy), int(box[2] * sx), int(box[3] * sy))
         size = (target[2] - target[0], target[3] - target[1])

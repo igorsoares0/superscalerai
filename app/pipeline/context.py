@@ -30,6 +30,7 @@ class ExecutionPlan(BaseModel):
     passes: int
     denoise: float
     guidance: float
+    face_creativity: float = 0.10  # creativity of the dedicated face repair pass
     hdr: float = 6.0  # Clarity `dynamic`, its default
     prompt: str
     negative_prompt: str = ""

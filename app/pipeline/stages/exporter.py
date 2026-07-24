@@ -41,6 +41,11 @@ class Exporter(PipelineStage):
                 "plan": state.plan.model_dump(),
                 "context": state.context.model_dump() if state.context else None,
                 "stage_timings": state.stage_timings,
+                # quality signals computed upstream, otherwise dropped after the job
+                "diagnostics": {
+                    "seams": state.artifacts.get("seams"),
+                    "face_identity": state.artifacts.get("face_identity"),
+                },
             },
             indent=2,
         )

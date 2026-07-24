@@ -23,11 +23,13 @@ class GenerativeUpscaler(PipelineStage):
     async def process(self, image: Image.Image, state: PipelineState) -> Image.Image:
         plan = state.plan
         assert plan is not None
-        input_url = state.artifacts.get("input_url")
-        if input_url is None:
-            buf = io.BytesIO()
-            image.convert("RGB").save(buf, format="JPEG", quality=95)
-            input_url = await self.provider.upload(buf.getvalue(), "input.jpg")
+        # Upload the image we actually received (post-preprocess). Never reuse
+        # the captioner's cached URL: that is the RAW, pre-denoise image, and
+        # feeding sensor noise / JPEG blocking into the generative pass is
+        # exactly what the Preprocessor's denoise exists to prevent.
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="JPEG", quality=95)
+        input_url = await self.provider.upload(buf.getvalue(), "input.jpg")
         pred = await self.provider.run(
             "generative-upscaler",
             {

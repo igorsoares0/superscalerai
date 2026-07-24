@@ -35,15 +35,28 @@ class Planner(PipelineStage):
     # faces smaller than this fraction of frame height get degraded by the
     # generative pass and need zoom-and-enhance repair (validated 2026-07-10)
     FACE_REPAIR_FRACTION = 0.4
+    # main-pass creativity a close-up face survives intact. At or above it a
+    # hot ("wow") background would mangle even large faces, so every face is
+    # routed to the dedicated low-creativity repair pass instead — this is
+    # what decouples the two dials (item 2, 2026-07-24). Conservative default:
+    # it preserves portrait's calibrated 0.20 behavior exactly; the exact
+    # cutover still wants GPU validation.
+    CLOSEUP_SAFE_CREATIVITY = 0.25
 
     async def process(self, image: Image.Image, state: PipelineState) -> Image.Image:
         ctx = state.context
         assert ctx is not None
         # SPEC.md Progressive Scaling: max 2x per generative pass
         passes = max(1, round(self.scale_factor / 2))
-        repair_faces = [
-            b for b in ctx.faces if (b[3] - b[1]) / ctx.height < self.FACE_REPAIR_FRACTION
-        ]
+        denoise = self.options.get("creativity", self.preset.denoise)
+        if denoise >= self.CLOSEUP_SAFE_CREATIVITY:
+            # hot background: protect identity by repairing every face, not
+            # just the small ones the main pass would otherwise degrade
+            repair_faces = list(ctx.faces)
+        else:
+            repair_faces = [
+                b for b in ctx.faces if (b[3] - b[1]) / ctx.height < self.FACE_REPAIR_FRACTION
+            ]
         caption = ctx.caption or self.preset.name
         extra = re.sub(r"\s+", " ", self.options.get("prompt_extra") or "").strip()
         if extra:
@@ -52,9 +65,10 @@ class Planner(PipelineStage):
             preset=self.preset.name,
             scale_factor=self.scale_factor,
             passes=passes,
-            denoise=self.options.get("creativity", self.preset.denoise),
+            denoise=denoise,
             guidance=self.options.get("resemblance", self.preset.guidance),
             hdr=self.options.get("hdr", self.preset.hdr),
+            face_creativity=self.preset.face_creativity,
             prompt=BASE_PROMPT.format(caption=caption) + self.preset.style_terms,
             negative_prompt=BASE_NEGATIVE + self.preset.negative_terms,
             seed=self.seed,

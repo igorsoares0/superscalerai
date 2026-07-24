@@ -20,6 +20,9 @@ class Preset(BaseModel):
     guidance: float
     local_enhancers: list[str]
     hdr: float = 6.0  # Clarity's `dynamic` default
+    # creativity of the zoom-and-enhance face pass, independent of the main
+    # (background) pass — calibrated 2026-07-21, see local_enhancers
+    face_creativity: float = 0.10
     style_terms: str = ""  # appended to the positive prompt
     negative_terms: str = ""  # appended to the negative prompt
 
