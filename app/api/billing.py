@@ -63,9 +63,22 @@ def change_plan(
     if not user.paddle_subscription_id:
         raise HTTPException(400, "no active subscription")  # new users go through checkout
     if user.plan_cancels_at is not None:
-        raise HTTPException(400, "subscription is already canceled")
+        raise HTTPException(400, "subscription is scheduled to cancel — resume it first")
     if target.slug == user.plan:
-        raise HTTPException(400, "already on this plan")
+        if user.plan_pending is None:
+            raise HTTPException(400, "already on this plan")
+        # A downgrade was scheduled and they changed their mind. Pointing the
+        # items back at the plan they're already on bills nothing now (this
+        # period is paid) and renews on it — exactly "never mind".
+        try:
+            billing.change_subscription_plan(user.paddle_subscription_id, target.price_id, False)
+        except httpx.HTTPError:
+            logger.exception("paddle plan change failed for %s", user.paddle_subscription_id)
+            raise HTTPException(502, "couldn't reach the payment provider, try again")
+        user.plan_pending = None
+        db.commit()
+        logger.info("subscription %s stays on %s", user.paddle_subscription_id, target.slug)
+        return {"status": "kept", "plan": target.slug}
     if target.slug == user.plan_pending:  # repeat click on a scheduled downgrade
         return {"status": "scheduled", "plan": target.slug}
 
@@ -113,6 +126,27 @@ def cancel_plan(user: User = Depends(get_current_user), db: Session = Depends(ge
         "plan": user.plan,
         "cancels_at": user.plan_cancels_at.isoformat() if user.plan_cancels_at else None,
     }
+
+
+@router.post("/resume")
+def resume_plan(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Undo a scheduled cancellation. Without this a mis-click costs the user
+    their plan: `change_plan` refuses everything while a cancellation is
+    pending, so there was no way back except waiting for the period to expire
+    and subscribing again. Idempotent — with nothing scheduled it just reports
+    the current state."""
+    if not user.paddle_subscription_id:
+        raise HTTPException(400, "no active subscription")
+    if user.plan_cancels_at is not None:
+        try:
+            billing.resume_subscription(user.paddle_subscription_id)
+        except httpx.HTTPError:
+            logger.exception("paddle resume failed for %s", user.paddle_subscription_id)
+            raise HTTPException(502, "couldn't reach the payment provider, try again")
+        user.plan_cancels_at = None
+        db.commit()
+        logger.info("subscription %s resumed for %s", user.paddle_subscription_id, user.id)
+    return {"plan": user.plan, "cancels_at": None}
 
 
 def _handle_transaction_completed(db: Session, data: dict) -> str:

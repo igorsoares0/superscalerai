@@ -174,22 +174,39 @@ def proration_rate(data: dict) -> float | None:
     return 0.0 if data.get("origin") == "subscription_update" else None
 
 
-def cancel_subscription(subscription_id: str) -> str | None:
+def cancel_subscription(subscription_id: str, immediately: bool = False) -> str | None:
     """Ask Paddle to cancel at the end of the paid period (the user keeps
     what they paid for; the subscription.canceled webhook expires the credits
-    on the effective date). Returns the ISO effective date — None when Paddle
-    canceled immediately instead of scheduling. Raises httpx.HTTPError on API
-    failure; callers decide how to answer the user."""
+    on the effective date). `immediately` is for account deletion, where
+    keeping the plan alive would bill an account nobody can log into. Returns
+    the ISO effective date — None when Paddle canceled immediately instead of
+    scheduling. Raises httpx.HTTPError on API failure; callers decide how to
+    answer the user."""
     base = PADDLE_API_BASE[settings.paddle_environment]
     r = httpx.post(
         f"{base}/subscriptions/{subscription_id}/cancel",
         headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
-        json={"effective_from": "next_billing_period"},
+        json={"effective_from": "immediately" if immediately else "next_billing_period"},
         timeout=15,
     )
     r.raise_for_status()
     change = (r.json().get("data") or {}).get("scheduled_change") or {}
     return change.get("effective_at")
+
+
+def resume_subscription(subscription_id: str) -> None:
+    """Drop a scheduled cancellation so the subscription keeps renewing.
+    Nothing is charged — the current period was already paid, and the next
+    renewal goes back to being a normal renewal. Raises httpx.HTTPError on API
+    failure; callers decide how to answer the user."""
+    base = PADDLE_API_BASE[settings.paddle_environment]
+    r = httpx.patch(
+        f"{base}/subscriptions/{subscription_id}",
+        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        json={"scheduled_change": None},
+        timeout=15,
+    )
+    r.raise_for_status()
 
 
 def change_subscription_plan(subscription_id: str, price_id: str, upgrade: bool) -> None:

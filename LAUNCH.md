@@ -1,7 +1,7 @@
 # Checklist de lançamento
 
 Levantado em 2026-07-27, incluindo uma review de segurança e uma review do fluxo
-de pagamentos. Atualizado em 2026-08-01. Estado do produto: **165 testes
+de pagamentos. Atualizado em 2026-08-01. Estado do produto: **179 testes
 passando**, fluxo completo do SPEC implementado.
 
 Marcadores: `[código]` = programar de verdade · `[seg]` = achado da review de
@@ -38,6 +38,9 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 - [ ] Registrar domínio + apontar DNS
 - [ ] Páginas de termos, privacidade e política de reembolso
       (a Paddle costuma exigir as três na revisão — pré-requisito do item abaixo)
+      A privacidade pode prometer exclusão self-service: o botão existe desde
+      2026-08-01 (modal Account). Descreva o que sobrevive — registros de
+      pagamento são retidos por obrigação fiscal.
 - [ ] Submeter a conta Paddle para aprovação de produção
 
 ## Bloco 2 — enquanto a Paddle revisa
@@ -90,7 +93,7 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
       todo mundo junto), sem bucket R2, sem `RESEND_API_KEY`, `EMAIL_FROM` ainda
       em example.com. Isso cobre boa parte do checklist de `.env` acima — o
       deploy erra alto e cedo em vez de silencioso.
-      Testes: `tests/test_config_checks.py` (16).
+      Testes: `tests/test_config_checks.py` (17).
 - [x] `[código]` Timeout no polling da Replicate
       FEITO 2026-08-01. O `while pred["status"] in ("starting","processing")`
       não tinha prazo; um job preso segurava o slot pra sempre e travava a fila
@@ -230,14 +233,33 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
       acontece do seu lado. `adjustment.created` / `transaction.updated` não
       chegam a lugar nenhum. *Gatilho: primeiro pedido de reembolso.*
 
-- [ ] `[código]` `[pag]` **Downgrade agendado e cancelamento prendem o usuário**
-      Agendou downgrade Pro→Basic (`plan_pending`) e mudou de ideia? `change_plan`
-      bate em `if target.slug == user.plan` → 400 "already on this plan", porque
-      `user.plan` ainda é "pro". Não há caminho de volta.
-      Mesma coisa no cancelamento: com `plan_cancels_at` setado, `change_plan`
-      recusa tudo (`app/api/billing.py:66`) e **não existe endpoint de retomar**.
-      Cancelou sem querer = suporte, ou esperar expirar e assinar de novo.
-      *Gatilho: primeiro ticket de suporte — vai vir.*
+- [x] `[código]` `[pag]` **Downgrade agendado e cancelamento prendem o usuário**
+      FEITO 2026-08-01 (antecipado: o gatilho era "primeiro ticket de suporte",
+      e o custo era 1h).
+      Era: agendou downgrade Pro→Basic (`plan_pending`) e mudou de ideia? Batia
+      em `if target.slug == user.plan` → 400 "already on this plan", porque
+      `user.plan` ainda é "pro". Cancelou sem querer? Com `plan_cancels_at`
+      setado o `change_plan` recusava tudo e não existia endpoint de retomar —
+      só esperar expirar e assinar de novo.
+      Correção, dois caminhos de volta:
+      - `POST /billing/resume` → `billing.resume_subscription()` faz
+        `PATCH /subscriptions/{id}` com `scheduled_change: null`. Nada é cobrado
+        (o período corrente já foi pago) e a próxima renovação volta a ser
+        renovação normal. Idempotente: sem cancelamento agendado não chama a
+        Paddle. Erro da Paddle = 502 e o agendamento continua de pé.
+      - `change_plan` com o plano ATUAL e `plan_pending` setado deixou de ser 400
+        e virou "never mind": PATCH dos items de volta pro preço atual com
+        `full_next_billing_period` (não cobra nada agora, renova no plano atual),
+        limpa `plan_pending`, responde `{"status": "kept"}`. Sem `plan_pending`,
+        continua 400 "already on this plan".
+      Bloqueio de troca durante cancelamento agendado foi MANTIDO de propósito
+      (a Paddle recusaria mesmo) — a mensagem agora aponta o caminho: "resume it
+      first".
+      UI (`billing.js`): o botão de cancelar vira **"Resume subscription"**
+      quando há cancelamento agendado, em UM clique (o duplo-clique protege ação
+      destrutiva; desfazer engano não precisa de convencimento), e o botão do
+      plano atual vira **"Keep {plano}"** quando há downgrade agendado.
+      Testes: 6 na seção "changing your mind" de `tests/test_billing.py`.
 
 - [ ] `[código]` `[seg]` **`error_message` cru devolvido ao usuário**
       `app/api/jobs.py:79` ← `app/workers/enhance.py:62`. `str(exc)` de qualquer
@@ -262,19 +284,34 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
 
 ## Antes de divulgar publicamente
 
-- [ ] `[código]` `[pag]` **Exclusão de conta — não existe**
-      Três problemas empilhados:
-      - **Legal:** hospedado na UE cobrando de europeus via Paddle. Direito ao
-        apagamento não é opcional.
-      - **Financeiro:** sem fluxo de exclusão não há código que cancele a
-        assinatura na Paddle. Apagar o usuário direto no banco = **a cobrança
-        continua** e o webhook passa a não achar dono (vira "ignored" num log).
-        Cliente pagando por conta que não existe é o pior bug de billing possível.
-      - **Estrutural:** `images`, `jobs`, `credit_ledger`, `payments`,
-        `auth_sessions` e `password_resets` todos têm FK pra `users`. Delete
-        simples quebra. E `payments` **precisa ser retido** por obrigação fiscal —
-        o desenho correto é anonimizar a linha do usuário e preservar os
-        pagamentos, não apagar em cascata.
+Nada aberto aqui desde 2026-08-01 — o único item da seção está feito.
+
+- [x] `[código]` `[pag]` **Exclusão de conta**
+      FEITO 2026-08-01. `POST /auth/delete` + `app/services/account.py` +
+      modal "Account" na sidebar (`account.js`).
+      Os três problemas, e como cada um foi resolvido:
+      - **Legal** (UE, direito ao apagamento): agora é self-service. **A política
+        de privacidade pode prometer o botão** — antes o texto teria que
+        descrever processo manual por email.
+      - **Financeiro:** cancela na Paddle ANTES de qualquer coisa e com
+        `effective_from: immediately` (conta que ninguém consegue logar não pode
+        seguir sendo cobrada; `cancel_subscription` ganhou o parâmetro
+        `immediately`). Falha da Paddle = 502 e **nada é commitado** — apagar
+        local com o cartão rodando é o pior desfecho possível, tem teste.
+      - **Estrutural:** a linha de `users` SOBREVIVE, esfregada. `payments` é
+        retido por obrigação fiscal e `credit_ledger` é histórico append-only, e
+        os dois têm FK pra `users.id` — cascata levaria a contabilidade junto.
+        Some: imagens (+ arquivos no storage, depois do commit), jobs (com o
+        `job_id` do ledger anulado antes, mesma regra do DELETE /images),
+        sessões e tokens de reset. Fica: email trocado por
+        `deleted+{id}@deleted.invalid` (RFC 2606 — libera o endereço pra pessoa
+        se cadastrar de novo), `password_hash` vazio, saldo zerado COM lançamento
+        `account_deleted` no ledger (saldo e ledger nunca divergem), `deleted_at`
+        setado (migração `9cac42c7b507`).
+      Exige a senha atual: sessão roubada não destrói biblioteca e assinatura.
+      `user_from_token` passou a recusar usuário com `deleted_at` — a exclusão
+      já apaga todas as sessões, isso é a segunda tranca.
+      Testes: `tests/test_account_delete.py` (8).
 
 ---
 

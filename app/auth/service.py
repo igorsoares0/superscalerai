@@ -60,7 +60,10 @@ def user_from_token(db: Session, token: str) -> User | None:
         db.delete(row)
         db.commit()
         return None
-    return db.get(User, row.user_id)
+    user = db.get(User, row.user_id)
+    # deletion drops every session, but the row outlives the person (payments
+    # are retained), so never hand it back as a logged-in user
+    return None if user is None or user.deleted_at is not None else user
 
 
 def revoke_session(db: Session, token: str) -> None:

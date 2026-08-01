@@ -1,3 +1,6 @@
+import logging
+
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -9,9 +12,11 @@ from app.auth import service
 from app.core.config import settings
 from app.database.models import CreditLedger, User
 from app.database.session import get_db
+from app.services import account
 from app.services import email as email_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 SESSION_COOKIE = "session"
 
@@ -108,6 +113,34 @@ def logout(
 @router.get("/me")
 def me(user: User = Depends(get_current_user)) -> dict:
     return _user_payload(user)
+
+
+class DeleteBody(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/delete")
+def delete_account(
+    body: DeleteBody,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Erase the account. Irreversible, so it costs the password — a stolen
+    session shouldn't be able to destroy someone's library and subscription."""
+    if not service.verify_password(user.password_hash, body.password):
+        raise HTTPException(401, "invalid credentials")
+    try:
+        keys = account.delete_account(db, user)
+    except httpx.HTTPError:
+        db.rollback()
+        logger.exception("paddle cancel failed while deleting account %s", user.id)
+        raise HTTPException(502, "couldn't cancel your subscription, nothing was deleted")
+    db.commit()
+    account.remove_files(keys)  # after the commit: orphan files beat orphan rows
+    logger.info("account %s deleted", user.id)
+    response.delete_cookie(SESSION_COOKIE)
+    return {"ok": True}
 
 
 class ForgotBody(BaseModel):

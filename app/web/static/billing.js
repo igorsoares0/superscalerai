@@ -12,6 +12,7 @@
   const cancelBtn = document.getElementById("billing-cancel-btn");
   const cancelNote = document.getElementById("billing-cancel-note");
   let cancelArmed = false;
+  let resumeMode = false; // the cancel button turns into "Resume" once scheduled
 
   let catalog = null; // { environment, client_token, plans, current }
   let me = null; // { id, email }
@@ -69,20 +70,28 @@
     const { plan, cancels_at } = catalog.current;
     cancelBox.classList.toggle("hidden", !plan);
     if (!plan) return;
-    if (cancels_at) {
-      cancelBtn.classList.add("hidden");
+    resumeMode = Boolean(cancels_at);
+    cancelBtn.classList.remove("hidden", "text-err");
+    cancelBtn.textContent = resumeMode ? "Resume subscription" : "Cancel subscription";
+    cancelNote.classList.toggle("hidden", !resumeMode);
+    if (resumeMode) {
       cancelNote.textContent =
         `Plan ends ${new Date(cancels_at).toLocaleDateString()} — remaining credits expire then.`;
-      cancelNote.classList.remove("hidden");
-    } else {
-      cancelBtn.classList.remove("hidden");
-      cancelBtn.classList.remove("text-err");
-      cancelBtn.textContent = "Cancel subscription";
-      cancelNote.classList.add("hidden");
     }
   }
 
+  async function resumeSubscription() {
+    cancelBtn.disabled = true;
+    const r = await api("/billing/resume", { method: "POST" });
+    cancelBtn.disabled = false;
+    if (!r.ok) return setStatus("Couldn't resume the subscription. Try again.", "err");
+    await load();
+    setStatus("Subscription resumed — it renews as usual.", "ok");
+  }
+
   cancelBtn.addEventListener("click", async () => {
+    // no two-click confirm here: undoing a mistake shouldn't need convincing
+    if (resumeMode) return resumeSubscription();
     if (!cancelArmed) {
       cancelArmed = true;
       cancelBtn.classList.add("text-err");
@@ -101,8 +110,11 @@
 
   function planButton(plan) {
     const isCurrent = catalog.current.plan === plan.slug;
+    // scheduled a downgrade and had second thoughts: the plan you're on is the
+    // way back, so its button has to stay clickable
+    const undoPending = isCurrent && Boolean(catalog.current.pending);
     const btn = document.createElement("button");
-    btn.disabled = isCurrent;
+    btn.disabled = isCurrent && !undoPending;
     btn.className =
       "flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors " +
       (isCurrent
@@ -128,6 +140,11 @@
       if (when) {
         btn.querySelector('[data-pl="credits"]').textContent +=
           ` · ${cancels_at ? "ends" : "renews"} ${new Date(when).toLocaleDateString()}`;
+      }
+      if (undoPending) {
+        btn.classList.add("hover:border-accent/60");
+        let armed = false;
+        btn.addEventListener("click", () => (armed ? switchPlan(plan) : (armed = armKeep(plan, btn))));
       }
     } else if (catalog.current.pending === plan.slug) {
       btn.disabled = true;
@@ -160,6 +177,15 @@
     return true;
   }
 
+  function armKeep(plan, btn) {
+    const pending = catalog.plans.find((p) => p.slug === catalog.current.pending);
+    btn.querySelector('[data-pl="name"]').textContent = `Keep ${plan.name} — click to confirm`;
+    setStatus(
+      `Cancels the switch to ${pending ? pending.name : catalog.current.pending}. ` +
+      `Nothing is charged and you stay on ${plan.name}.`);
+    return true;
+  }
+
   async function switchPlan(plan) {
     setStatus("Switching plans…");
     const r = await api("/billing/change", {
@@ -173,11 +199,16 @@
       load(); // un-arm the buttons
       return;
     }
-    if ((await r.json()).status === "upgraded") {
+    const status = (await r.json()).status;
+    if (status === "upgraded") {
       waitForCredits(); // the prorated charge's webhook lands in seconds
     } else {
       await load();
-      setStatus(`Done — ${plan.name} starts at your next renewal.`, "ok");
+      setStatus(
+        status === "kept"
+          ? `Done — you stay on ${plan.name}.`
+          : `Done — ${plan.name} starts at your next renewal.`,
+        "ok");
     }
   }
 

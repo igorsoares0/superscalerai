@@ -38,6 +38,12 @@ class User(Base):
     # downgrade scheduled for the next renewal (upgrades apply immediately)
     plan_pending: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Account deleted: the row survives because payments and credit_ledger are
+    # financial records we have to keep and both point here. Everything that
+    # identifies a person is scrubbed — see app/services/account.py.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class AuthSession(Base):

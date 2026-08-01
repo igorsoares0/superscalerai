@@ -369,6 +369,94 @@ def test_downgrade_waits_for_renewal(client, paddle_change):
     assert current["plan"] == "basic" and current["pending"] is None
 
 
+# ---- changing your mind ----
+
+
+@pytest.fixture
+def paddle_resume(monkeypatch):
+    calls = []
+    monkeypatch.setattr(billing, "resume_subscription", lambda sub: calls.append(sub))
+    return calls
+
+
+def test_resume_undoes_a_scheduled_cancellation(client, paddle_resume, monkeypatch):
+    """A mis-click used to cost the plan: change_plan refuses everything while
+    a cancellation is pending, and there was no way back."""
+    monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+    assert client.post("/billing/cancel").status_code == 200
+
+    r = client.post("/billing/resume")
+    assert r.status_code == 200 and r.json()["cancels_at"] is None
+    assert paddle_resume == [sub]
+
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "basic" and current["cancels_at"] is None
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+def test_resume_is_idempotent_and_needs_a_subscription(client, paddle_resume):
+    assert client.post("/billing/resume").status_code == 400  # nothing to resume
+
+    post_webhook(client, completed_event(user_id_of(client), subscription_id=new_sub()))
+    assert client.post("/billing/resume").status_code == 200
+    assert paddle_resume == []  # nothing was scheduled: don't call Paddle
+
+
+def test_plan_changes_work_again_after_resuming(client, paddle_change, paddle_resume, monkeypatch):
+    monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid, subscription_id=new_sub()))
+    client.post("/billing/cancel")
+
+    assert client.post("/billing/change", json={"plan": "pro"}).status_code == 400
+    client.post("/billing/resume")
+    assert client.post("/billing/change", json={"plan": "pro"}).status_code == 200
+
+
+def test_resume_paddle_error_leaves_the_cancellation_scheduled(client, monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
+
+    def boom(sub):
+        raise httpx.HTTPError("paddle down")
+
+    monkeypatch.setattr(billing, "resume_subscription", boom)
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid, subscription_id=new_sub()))
+    client.post("/billing/cancel")
+
+    assert client.post("/billing/resume").status_code == 502
+    assert client.get("/billing/plans").json()["current"]["cancels_at"] is not None
+
+
+def test_keeping_the_current_plan_drops_a_scheduled_downgrade(client, paddle_change):
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+    assert client.post("/billing/change", json={"plan": "basic"}).json()["status"] == "scheduled"
+
+    # clicking the plan they're already on used to be a 400 "already on this plan"
+    r = client.post("/billing/change", json={"plan": "pro"})
+    assert r.status_code == 200 and r.json()["status"] == "kept"
+    pro_price = next(p.price_id for p in billing.PLANS if p.slug == "pro")
+    assert paddle_change[-1] == (sub, pro_price, False)  # no charge now
+
+    current = client.get("/billing/plans").json()["current"]
+    assert current["plan"] == "pro" and current["pending"] is None
+    assert client.get("/credits").json()["balance"] == PRO
+
+
+def test_current_plan_without_a_pending_change_is_still_rejected(client, paddle_change):
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid, subscription_id=new_sub()))
+    assert client.post("/billing/change", json={"plan": "basic"}).status_code == 400
+    assert paddle_change == []
+
+
 def test_change_blocked_after_cancel(client, paddle_change, monkeypatch):
     monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
     uid = user_id_of(client)
