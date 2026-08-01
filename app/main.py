@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api import billing, credits, download, images, jobs
+from app.api.body_limit import BodySizeLimitMiddleware
+from app.core.config import config_problems, settings
 from app.auth import router as auth
 from app.auth import service as auth_service
 from app.database.migrate import run_migrations
@@ -16,8 +18,20 @@ from app.web import router as web
 from app.services import credits as credits_service
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+_fatal, _warnings = config_problems(settings)
+for _problem in _warnings:
+    logger.warning("config: %s", _problem)
+if _fatal:  # refuse to serve rather than serve silently wrong
+    raise RuntimeError(
+        "production config is not safe to serve:\n  - " + "\n  - ".join(_fatal)
+    )
 
 app = FastAPI(title="SuperScaler AI")
+
+# Outermost: a body that never gets buffered can't fill the disk or the heap.
+app.add_middleware(BodySizeLimitMiddleware)
 
 run_migrations()
 

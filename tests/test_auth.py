@@ -49,6 +49,29 @@ def test_wrong_password_and_unknown_email_same_error():
     assert wrong.json() == unknown.json()
 
 
+def test_unknown_email_still_costs_a_password_verification(monkeypatch):
+    """Same error message isn't enough: returning before Argon2 runs answers an
+    unknown email ~60ms faster than a wrong password, and that gap enumerates
+    accounts. The login path must verify something either way."""
+    from app.auth import service
+
+    seen = []
+    real = service.verify_password
+    monkeypatch.setattr(
+        service, "verify_password", lambda h, p: seen.append(h) or real(h, p)
+    )
+
+    client = TestClient(app)
+    assert client.post("/auth/login", json=_creds()).status_code == 401
+    assert seen == [None]  # called with "no such user", not skipped
+
+
+def test_verify_password_without_a_user_is_false():
+    from app.auth import service
+
+    assert service.verify_password(None, "password-123") is False
+
+
 def test_short_password_rejected():
     client = TestClient(app)
     r = client.post("/auth/register", json={"email": "x@example.com", "password": "short"})

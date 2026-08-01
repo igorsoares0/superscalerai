@@ -79,8 +79,10 @@ def login(
     for key in (f"login:ip:{ratelimit.client_ip(request)}", f"login:email:{email}"):
         ratelimit.enforce(key, settings.login_rate_limit, settings.login_rate_window_minutes)
     user = db.scalar(select(User).where(User.email == email))
-    # same error for unknown email and wrong password: don't leak which emails exist
-    if user is None or not service.verify_password(user.password_hash, body.password):
+    # same error AND same cost for unknown email and wrong password: the reply
+    # must not leak which emails exist, by message or by response time
+    verified = service.verify_password(user.password_hash if user else None, body.password)
+    if user is None or not verified:
         raise HTTPException(401, "invalid credentials")
     # correct password: forget the attempt history so a legit user who fumbled
     # their password a few times isn't locked out of their own account

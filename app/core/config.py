@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    environment: str = "dev"  # "production" turns on the boot checks below
     database_url: str = "sqlite:///./dev.db"
     replicate_api_token: str = ""
     storage_dir: Path = Path("storage")
@@ -21,6 +22,10 @@ class Settings(BaseSettings):
     # at a loss besides being slow/flaky on the provider.
     max_image_px: int = 3072
     max_concurrent_jobs: int = 4  # Replicate 429s around 8 parallel predictions
+    # A prediction that never settles would hold its slot forever and stall the
+    # queue for everyone. Generous: a cold model on Replicate can take minutes
+    # to boot before the ~60s of GPU work.
+    prediction_timeout_seconds: int = 600
     rate_limit_enabled: bool = True
     trust_proxy_headers: bool = False  # True only behind a proxy that overwrites X-Forwarded-For
     login_rate_limit: int = 5  # per IP and per email (brute-force)
@@ -48,3 +53,54 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def config_problems(s: Settings) -> tuple[list[str], list[str]]:
+    """(fatal, warnings) for the current configuration.
+
+    Every one of these has a silent failure mode: the app boots, serves, and
+    quietly does the wrong thing — sessions over plain HTTP, webhooks rejected
+    while customers are charged, reset links pointing at localhost. Cheaper to
+    refuse to start than to find out from a user. Only checked when
+    environment=production, since the defaults are all correct for dev."""
+    if s.environment != "production":
+        return [], []
+
+    fatal = []
+    if not s.replicate_api_token:
+        fatal.append("REPLICATE_API_TOKEN is empty — every job would fail")
+    if not s.paddle_webhook_secret:
+        fatal.append(
+            "PADDLE_WEBHOOK_SECRET is empty — every webhook is rejected, so "
+            "customers would be charged and get no credits"
+        )
+    if not s.paddle_api_key:
+        fatal.append("PADDLE_API_KEY is empty — plan changes and cancellations would fail")
+    if not s.paddle_client_token:
+        fatal.append("PADDLE_CLIENT_TOKEN is empty — the checkout can't open")
+    if s.paddle_environment != "production":
+        fatal.append(
+            f"PADDLE_ENVIRONMENT is {s.paddle_environment!r} — sandbox prices take no real money"
+        )
+    if not s.cookie_secure:
+        fatal.append("COOKIE_SECURE is off — session cookies would travel in plain HTTP")
+    if not s.app_base_url.startswith("https://") or "localhost" in s.app_base_url:
+        fatal.append(f"APP_BASE_URL is {s.app_base_url!r} — password reset links would be broken")
+    if s.database_url.startswith("sqlite"):
+        fatal.append("DATABASE_URL still points at SQLite — production runs on Neon")
+
+    warnings = []
+    if not s.rate_limit_enabled:
+        warnings.append("rate limiting is disabled")
+    if not s.trust_proxy_headers:
+        warnings.append(
+            "TRUST_PROXY_HEADERS is off — behind a reverse proxy every client "
+            "looks like one IP, so per-IP limits throttle everyone together"
+        )
+    if not s.r2_bucket:
+        warnings.append("no R2 bucket configured — uploads and results stay on the local disk")
+    if not s.resend_api_key:
+        warnings.append("RESEND_API_KEY is empty — password reset emails are only logged")
+    if "example.com" in s.email_from:
+        warnings.append(f"EMAIL_FROM is still {s.email_from!r}")
+    return fatal, warnings

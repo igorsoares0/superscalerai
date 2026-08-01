@@ -155,7 +155,7 @@
   function arm(plan, btn) {
     btn.querySelector('[data-pl="name"]').textContent = `Switch to ${plan.name} — click to confirm`;
     setStatus(isUpgrade(plan)
-      ? "You'll be charged the prorated difference for the rest of this period right away."
+      ? `You'll be charged the prorated difference for the rest of this period right away, and get the matching share of the extra credits now. Your full ${plan.credits} land at the next renewal.`
       : "No charge now — the new plan starts at your next renewal. You keep your current credits until then.");
     return true;
   }

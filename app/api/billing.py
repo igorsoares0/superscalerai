@@ -2,7 +2,6 @@
 
 import json
 import logging
-from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -105,7 +104,7 @@ def cancel_plan(user: User = Depends(get_current_user), db: Session = Depends(ge
             raise HTTPException(502, "couldn't reach the payment provider, try again")
         # immediate cancels have no scheduled date; the webhook that follows
         # clears the plan either way
-        user.plan_cancels_at = _parse_dt(effective) or user.plan_renews_at
+        user.plan_cancels_at = billing.parse_dt(effective) or user.plan_renews_at
         db.commit()
         logger.info(
             "subscription %s cancels at %s", user.paddle_subscription_id, user.plan_cancels_at
@@ -116,28 +115,30 @@ def cancel_plan(user: User = Depends(get_current_user), db: Session = Depends(ge
     }
 
 
-def _parse_dt(value) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def _handle_transaction_completed(db: Session, data: dict) -> str:
     transaction_id = data.get("id")
     custom = data.get("custom_data") or {}
+
+    # Ownership first: on the shared Paddle account, a tagged price on the line
+    # items is what makes a transaction ours.
+    plan = billing.plan_in_transaction(data)
+    if plan is None:
+        if custom.get("app") == billing.CUSTOM_DATA_APP:  # ours, but malformed
+            logger.warning("paddle webhook: no plan items on %s", transaction_id)
+        return "ignored"
+    plan_slug, credits = plan
+
+    subscription_id = data.get("subscription_id")
+    # custom_data is injected at checkout, so it can't be trusted to ride along
+    # on later renewal transactions. Falling back to the subscription we already
+    # track is what keeps a paying customer from silently losing a month of
+    # credits. The lookup is exact: subscription ids are unique at Paddle.
     user = db.get(User, custom.get("user_id") or "")
+    if user is None and subscription_id:
+        user = db.scalar(select(User).where(User.paddle_subscription_id == subscription_id))
     if user is None or not transaction_id:
         logger.warning("paddle webhook: no user for transaction %s", transaction_id)
         return "ignored"
-
-    plan = billing.plan_in_transaction(data)
-    if plan is None:
-        logger.warning("paddle webhook: no plan items on %s", transaction_id)
-        return "ignored"
-    plan_slug, credits = plan
 
     totals = (data.get("details") or {}).get("totals") or {}
     try:
@@ -145,7 +146,8 @@ def _handle_transaction_completed(db: Session, data: dict) -> str:
     except (TypeError, ValueError):
         amount = 0
     currency = totals.get("currency_code") or "USD"
-    renews_at = _parse_dt((data.get("billing_period") or {}).get("ends_at"))
+    renews_at = billing.parse_dt((data.get("billing_period") or {}).get("ends_at"))
+    prorated = billing.proration_rate(data)
 
     try:
         applied = billing.apply_renewal(
@@ -156,8 +158,9 @@ def _handle_transaction_completed(db: Session, data: dict) -> str:
             credits,
             amount,
             currency,
-            data.get("subscription_id"),
+            subscription_id,
             renews_at,
+            prorated,
         )
         db.commit()
     except IntegrityError:  # concurrent duplicate delivery
@@ -165,10 +168,11 @@ def _handle_transaction_completed(db: Session, data: dict) -> str:
         applied = False
     if applied:
         logger.info(
-            "paddle webhook: %s renewed to plan %s (%d credits, %s)",
+            "paddle webhook: %s settled plan %s (%d credits%s, %s)",
             user.id,
             plan_slug,
             credits,
+            "" if prorated is None else f", prorated {prorated:.3f}",
             transaction_id,
         )
     return "renewed" if applied else "duplicate"
@@ -207,10 +211,12 @@ async def paddle_webhook(request: Request, db: Session = Depends(get_db)) -> dic
     except ValueError:
         raise HTTPException(400, "invalid payload")
 
+    # No custom_data gate here: it's injected at checkout and Paddle isn't
+    # guaranteed to carry it onto the transactions it generates later. Each
+    # handler decides ownership from something durable instead — the price tag
+    # on the line items, or the subscription id we already track — so an event
+    # from another app on the shared Paddle account still can't match.
     data = event.get("data") or {}
-    custom = data.get("custom_data") or {}
-    if custom.get("app") != billing.CUSTOM_DATA_APP:
-        return {"status": "ignored"}  # another app on the shared Paddle account
 
     # Non-2xx makes Paddle retry; events we don't act on are acknowledged.
     event_type = event.get("event_type")

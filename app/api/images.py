@@ -18,6 +18,21 @@ router = APIRouter(prefix="/images", tags=["images"])
 logger = logging.getLogger(__name__)
 
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+READ_CHUNK = 256 * 1024
+
+
+async def _read_within_limit(file: UploadFile, limit: int) -> bytes:
+    """The whole request is already capped by BodySizeLimitMiddleware; this
+    enforces the documented per-file limit exactly, and stops assembling the
+    bytes the moment the file goes over instead of after."""
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(READ_CHUNK):
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, f"file exceeds {settings.max_upload_mb}MB")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/upload", status_code=201)
@@ -31,9 +46,7 @@ async def upload_image(
         settings.upload_rate_limit,
         settings.upload_rate_window_minutes,
     )
-    data = await file.read()
-    if len(data) > settings.max_upload_mb * 1024 * 1024:
-        raise HTTPException(413, f"file exceeds {settings.max_upload_mb}MB")
+    data = await _read_within_limit(file, settings.max_upload_mb * 1024 * 1024)
     try:
         image = Image.open(io.BytesIO(data))
         image.verify()

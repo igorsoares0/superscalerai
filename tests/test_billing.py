@@ -35,31 +35,37 @@ def completed_event(
     credits: int = BASIC,
     app: str = "superscaler",
     subscription_id: str | None = None,
+    proration: float | None = None,
+    period: tuple[str, str] = ("2026-07-14T00:00:00Z", "2026-08-14T00:00:00Z"),
+    tagged: bool = True,
+    origin: str | None = None,
 ) -> dict:
     # subscription ids are globally unique at Paddle; tests share one dev.db
     subscription_id = subscription_id or f"sub_{uuid.uuid4().hex[:26]}"
+    item = {
+        "quantity": 1,
+        "price": {
+            "id": "pri_test",
+            "custom_data": {"app": app, "plan": plan, "credits": credits},
+        },
+    }
+    if proration is not None:
+        item["proration"] = {"rate": str(proration)}
+    data = {
+        "id": txn or f"txn_{uuid.uuid4().hex[:26]}",
+        "subscription_id": subscription_id,
+        "items": [item],
+        "billing_period": {"starts_at": period[0], "ends_at": period[1]},
+        "details": {"totals": {"total": "1200", "grand_total": "1200", "currency_code": "USD"}},
+    }
+    if tagged:  # tagged=False models Paddle not carrying the checkout's data over
+        data["custom_data"] = {"app": app, "user_id": user_id}
+    if origin is not None:
+        data["origin"] = origin
     return {
         "event_id": f"evt_{uuid.uuid4().hex}",
         "event_type": "transaction.completed",
-        "data": {
-            "id": txn or f"txn_{uuid.uuid4().hex[:26]}",
-            "subscription_id": subscription_id,
-            "custom_data": {"app": app, "user_id": user_id},
-            "items": [
-                {
-                    "quantity": 1,
-                    "price": {
-                        "id": "pri_test",
-                        "custom_data": {"app": app, "plan": plan, "credits": credits},
-                    },
-                }
-            ],
-            "billing_period": {
-                "starts_at": "2026-07-14T00:00:00Z",
-                "ends_at": "2026-08-14T00:00:00Z",
-            },
-            "details": {"totals": {"total": "1200", "grand_total": "1200", "currency_code": "USD"}},
-        },
+        "data": data,
     }
 
 
@@ -86,6 +92,20 @@ def post_webhook(client, event: dict, header: str | None = "auto"):
 
 def user_id_of(client) -> str:
     return client.get("/auth/me").json()["id"]
+
+
+def set_credits(user_id: str, balance: int) -> None:
+    """Spend down the month's credits without going through a job."""
+    from app.database.models import User
+    from app.database.session import SessionLocal
+
+    with SessionLocal() as db:
+        db.get(User, user_id).credits = balance
+        db.commit()
+
+
+def new_sub() -> str:
+    return f"sub_{uuid.uuid4().hex[:26]}"
 
 
 # ---- plans catalog ----
@@ -164,15 +184,7 @@ def test_first_charge_activates_plan(client):
 def test_renewal_resets_balance_instead_of_adding(client):
     uid = user_id_of(client)
     post_webhook(client, completed_event(uid))
-    # spend part of the month's credits, then renew
-    from app.database.models import User
-    from app.database.session import SessionLocal
-
-    with SessionLocal() as db:
-        user = db.get(User, uid)
-        user.credits = 40
-        db.commit()
-
+    set_credits(uid, 40)  # spend part of the month, then renew
     assert post_webhook(client, completed_event(uid)).json()["status"] == "renewed"
     assert client.get("/credits").json()["balance"] == BASIC  # 250, not 290
 
@@ -306,9 +318,9 @@ def test_change_to_same_plan(client, paddle_change):
     assert paddle_change == []
 
 
-def test_upgrade_charges_now_and_webhook_resets(client, paddle_change):
+def test_upgrade_charges_now_and_webhook_applies_it(client, paddle_change):
     uid = user_id_of(client)
-    sub = f"sub_{uuid.uuid4().hex[:26]}"
+    sub = new_sub()
     post_webhook(client, completed_event(uid, subscription_id=sub))
 
     r = client.post("/billing/change", json={"plan": "pro"})
@@ -316,11 +328,19 @@ def test_upgrade_charges_now_and_webhook_resets(client, paddle_change):
     pro_price = next(p.price_id for p in billing.PLANS if p.slug == "pro")
     assert paddle_change == [(sub, pro_price, True)]
 
-    # the prorated charge arrives as a normal transaction on the same sub
-    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
-    assert client.get("/credits").json()["balance"] == PRO
+    # the charge arrives as a transaction on the same sub, prorated to what's
+    # left of the period — so is the grant (see the proration tests below)
+    post_webhook(
+        client,
+        completed_event(uid, plan="pro", credits=PRO, subscription_id=sub, proration=0.5),
+    )
+    assert client.get("/credits").json()["balance"] == BASIC + round((PRO - BASIC) * 0.5)
     current = client.get("/billing/plans").json()["current"]
     assert current["plan"] == "pro" and current["pending"] is None
+
+    # the next renewal is a full period: the whole Pro allowance lands
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+    assert client.get("/credits").json()["balance"] == PRO
 
 
 def test_downgrade_waits_for_renewal(client, paddle_change):
@@ -372,6 +392,158 @@ def test_change_paddle_error_leaves_state_untouched(client, monkeypatch):
     assert client.post("/billing/change", json={"plan": "basic"}).status_code == 502
     current = client.get("/billing/plans").json()["current"]
     assert current["plan"] == "pro" and current["pending"] is None
+
+
+# ---- renewals that arrive without the checkout's custom_data ----
+
+
+def test_renewal_finds_user_by_subscription_when_custom_data_is_missing(client):
+    """custom_data is injected at checkout and Paddle doesn't guarantee it on
+    the transactions it generates later. Dropping such a renewal would charge
+    a customer and give them nothing, silently."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+    set_credits(uid, 3)
+
+    r = post_webhook(client, completed_event(uid, subscription_id=sub, tagged=False))
+    assert r.status_code == 200 and r.json()["status"] == "renewed"
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+def test_renewal_of_an_untracked_subscription_is_ignored(client):
+    uid = user_id_of(client)
+    post_webhook(client, completed_event(uid, subscription_id=new_sub()))
+
+    r = post_webhook(client, completed_event(uid, subscription_id=new_sub(), tagged=False))
+    assert r.status_code == 200 and r.json()["status"] == "ignored"
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+def test_transaction_without_a_subscription_keeps_the_link(client):
+    """A one-off transaction tagged as ours arrives with subscription_id=None.
+    Letting that null the link would cost the user cancel/change-plan and, worse,
+    break the lookup that credits their next renewal."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    one_off = completed_event(uid, subscription_id=sub)
+    one_off["data"]["subscription_id"] = None
+    assert post_webhook(client, one_off).json()["status"] == "renewed"
+
+    # still tracked: the renewal after it lands, custom_data or not
+    set_credits(uid, 1)
+    assert post_webhook(client, completed_event(uid, subscription_id=sub, tagged=False)).json()[
+        "status"
+    ] == "renewed"
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+# ---- prorated plan changes ----
+
+
+def test_proration_rate_reads_the_line_item():
+    assert billing.proration_rate(completed_event("u", proration=0.25)["data"]) == 0.25
+    assert billing.proration_rate(completed_event("u", proration=1)["data"]) is None
+    assert billing.proration_rate(completed_event("u")["data"]) is None
+
+
+def test_prorated_upgrade_grants_only_the_remaining_share(client):
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    post_webhook(
+        client,
+        completed_event(uid, plan="pro", credits=PRO, subscription_id=sub, proration=0.2),
+    )
+    credits = client.get("/credits").json()
+    granted = round((PRO - BASIC) * 0.2)  # only the allowance DIFFERENCE is bought
+    assert credits["balance"] == BASIC + granted
+    upgrade = [e for e in credits["ledger"] if e["reason"] == "plan_upgrade"]
+    assert len(upgrade) == 1 and upgrade[0]["delta"] == granted
+    assert client.get("/billing/plans").json()["current"]["plan"] == "pro"
+
+
+def test_last_day_upgrade_is_not_an_arbitrage(client, paddle_change):
+    """Upgrade on the last day of the cycle for cents, downgrade (free, takes
+    effect next period), repeat every month. If the grant doesn't follow the
+    charge, that loop buys a Pro month for barely more than a Basic one."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+    set_credits(uid, 0)  # month fully spent
+
+    last_day = 1 / 30
+    post_webhook(
+        client,
+        completed_event(uid, plan="pro", credits=PRO, subscription_id=sub, proration=last_day),
+    )
+    assert client.get("/credits").json()["balance"] == round((PRO - BASIC) * last_day)  # 25
+
+    # the free downgrade back to basic doesn't hand anything over either
+    assert client.post("/billing/change", json={"plan": "basic"}).status_code == 200
+    assert client.get("/credits").json()["balance"] == 25
+
+
+def test_short_period_is_prorated_without_an_explicit_rate(client):
+    """No proration.rate on the item: the window the charge covers is enough
+    to tell a partial period from a whole one."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    post_webhook(
+        client,
+        completed_event(
+            uid,
+            plan="pro",
+            credits=PRO,
+            subscription_id=sub,
+            period=("2026-08-11T00:00:00Z", "2026-08-14T00:00:00Z"),  # 3 days left
+        ),
+    )
+    assert client.get("/credits").json()["balance"] == BASIC + round((PRO - BASIC) * 3 / 30)
+
+
+def test_short_month_renewal_is_still_a_full_period(client):
+    """February is 28 days — a real renewal must not read as a proration."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+    set_credits(uid, 5)
+
+    post_webhook(
+        client,
+        completed_event(
+            uid,
+            plan="pro",
+            credits=PRO,
+            subscription_id=sub,
+            period=("2027-02-01T00:00:00Z", "2027-03-01T00:00:00Z"),
+        ),
+    )
+    assert client.get("/credits").json()["balance"] == PRO
+
+
+def test_unmeasurable_plan_change_grants_nothing_now(client):
+    """A subscription_update with no period to measure: grant nothing rather
+    than a free month. The next renewal settles the full allowance."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+
+    event = completed_event(
+        uid, plan="pro", credits=PRO, subscription_id=sub, origin="subscription_update"
+    )
+    del event["data"]["billing_period"]
+    assert post_webhook(client, event).json()["status"] == "renewed"
+    assert client.get("/credits").json()["balance"] == BASIC
+    assert client.get("/billing/plans").json()["current"]["plan"] == "pro"
+
+    post_webhook(client, completed_event(uid, plan="pro", credits=PRO, subscription_id=sub))
+    assert client.get("/credits").json()["balance"] == PRO
 
 
 def test_other_apps_events_ignored(client):

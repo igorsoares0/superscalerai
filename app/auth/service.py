@@ -14,16 +14,27 @@ from app.database.models import AuthSession, PasswordReset, User
 
 _hasher = PasswordHasher()
 
+# Argon2 bakes its cost parameters into the hash string, so verifying against
+# this throwaway costs exactly what verifying a real user costs. Built once at
+# import — hashing is deliberately slow.
+_DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(32))
+
 
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
 
-def verify_password(password_hash: str, password: str) -> bool:
+def verify_password(password_hash: str | None, password: str) -> bool:
+    """False when the password is wrong. `password_hash=None` means no such
+    user, and still runs a full verification against a dummy hash: returning
+    early there answers an unknown email measurably faster than a wrong
+    password, which enumerates accounts no matter how careful the error
+    message is."""
     try:
-        return _hasher.verify(password_hash, password)
+        verified = _hasher.verify(password_hash or _DUMMY_HASH, password)
     except VerificationError:
         return False
+    return verified and password_hash is not None
 
 
 def _token_hash(token: str) -> str:
