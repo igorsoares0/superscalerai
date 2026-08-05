@@ -50,7 +50,20 @@ async def upload_image(
     try:
         image = Image.open(io.BytesIO(data))
         image.verify()
-    except UnidentifiedImageError:
+    except Image.DecompressionBombError:
+        # So many pixels PIL refuses to even decode the header — a 227 KB PNG
+        # can declare 20000x12000. It's the same answer as the max_image_px
+        # check below, which is what it would have failed anyway.
+        raise HTTPException(
+            413,
+            f"image is too large; the longest side must be "
+            f"at most {settings.max_image_px}px",
+        ) from None
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError):
+        # UnidentifiedImageError alone isn't enough: a truncated PNG raises a
+        # plain OSError, and a malformed header can surface as either of the
+        # others. Uncaught, all of them were a 500 on a request anyone can
+        # make for free.
         raise HTTPException(415, "not a valid image") from None
     if image.format not in ALLOWED_FORMATS:
         raise HTTPException(415, f"format {image.format} not supported")

@@ -13,9 +13,13 @@ from tests.conftest import png_bytes
 
 @pytest.fixture(autouse=True)
 def no_worker(monkeypatch):
-    import app.api.jobs as jobs_api
+    """Jobs are created but never really run. Stubbing the pipeline entry
+    point rather than the enqueue keeps the queue's reserve/release
+    accounting real, so these tests can't leak reservations into the next
+    ones — and they still exercise the path POST /jobs actually takes."""
+    from app.jobs import queue
 
-    monkeypatch.setattr(jobs_api, "enqueue_enhancement", lambda job_id, bg: None)
+    monkeypatch.setattr(queue, "run_enhancement", lambda job_id: None)
 
 
 def upload(client) -> str:

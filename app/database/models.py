@@ -38,6 +38,12 @@ class User(Base):
     # downgrade scheduled for the next renewal (upgrades apply immediately)
     plan_pending: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # When the address was proven to belong to whoever signed up. Until then
+    # the account works but has earned no signup bonus: those credits are real
+    # GPU money, and a made-up address could mint them all day.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Account deleted: the row survives because payments and credit_ledger are
     # financial records we have to keep and both point here. Everything that
     # identifies a person is scrubbed — see app/services/account.py.
@@ -65,6 +71,22 @@ class PasswordReset(Base):
     emailed link."""
 
     __tablename__ = "password_resets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmailVerification(Base):
+    """Single-use proof-of-address token. Same shape and same rules as
+    PasswordReset — only the SHA-256 is stored, the raw token exists solely
+    in the emailed link — but it lives longer: a reset is something you asked
+    for a minute ago, a signup confirmation waits for you to open your mail."""
+
+    __tablename__ = "email_verifications"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)

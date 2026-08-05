@@ -23,7 +23,9 @@ MODELS = {
 class ReplicateProvider(AIProvider):
     def __init__(self, token: str | None = None):
         self._client = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {token or settings.replicate_api_token}"},
+            headers={
+                "Authorization": f"Bearer {token or settings.replicate_api_token.get_secret_value()}"
+            },
             timeout=httpx.Timeout(120, read=120),
         )
 

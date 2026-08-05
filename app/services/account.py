@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.database.models import (
     AuthSession,
     CreditLedger,
+    EmailVerification,
     ImageRecord,
     Job,
     PasswordReset,
@@ -55,6 +56,7 @@ def delete_account(db: Session, user: User) -> list[str]:
     db.execute(delete(ImageRecord).where(ImageRecord.user_id == user.id))
     db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
     db.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+    db.execute(delete(EmailVerification).where(EmailVerification.user_id == user.id))
 
     if user.credits > 0:  # balance and ledger are always written together
         db.add(CreditLedger(user_id=user.id, delta=-user.credits, reason="account_deleted"))

@@ -10,7 +10,7 @@ from app.api import ratelimit
 from app.api.deps import get_current_user
 from app.auth import service
 from app.core.config import settings
-from app.database.models import CreditLedger, User
+from app.database.models import User
 from app.database.session import get_db
 from app.services import account
 from app.services import email as email_service
@@ -38,14 +38,24 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 def _user_payload(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "credits": user.credits}
+    return {
+        "id": user.id,
+        "email": user.email,
+        "credits": user.credits,
+        "email_verified": user.email_verified_at is not None,
+    }
 
 
 @router.post("/register", status_code=201)
 def register(
-    body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)
+    body: Credentials,
+    request: Request,
+    response: Response,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> dict:
-    # per-IP: every account mints signup_bonus_credits, which are paid GPU time
+    # per-IP: rate limiting is now the SECOND line — the signup bonus waits for
+    # a confirmed address — but a signup still costs us an outbound email
     ratelimit.enforce(
         f"register:ip:{ratelimit.client_ip(request)}",
         settings.register_rate_limit,
@@ -55,23 +65,67 @@ def register(
     if db.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(409, "email already registered")
 
-    user = User(
-        email=email,
-        password_hash=service.hash_password(body.password),
-        credits=settings.signup_bonus_credits,
-    )
+    # credits=0 on purpose: the bonus is paid when the address is confirmed
+    # (service.grant_signup_bonus). Everything else works meanwhile — an
+    # unconfirmed account can look around, upload, and subscribe.
+    user = User(email=email, password_hash=service.hash_password(body.password))
     db.add(user)
     db.flush()
-    if settings.signup_bonus_credits > 0:
-        db.add(
-            CreditLedger(
-                user_id=user.id, delta=settings.signup_bonus_credits, reason="signup_bonus"
-            )
-        )
+    verification = service.create_email_verification(db, user.id)
     token = service.create_session(db, user.id)
     db.commit()
+    background.add_task(
+        email_service.send_verification,
+        user.email,
+        f"{settings.app_base_url}/verify?token={verification}",
+    )
     _set_session_cookie(response, token)
     return _user_payload(user)
+
+
+class VerifyBody(BaseModel):
+    token: str = Field(min_length=16, max_length=128)
+
+
+@router.post("/verify")
+def verify_email(body: VerifyBody, response: Response, db: Session = Depends(get_db)) -> dict:
+    """Consume a confirmation link. Signs the user in as well: the link is
+    routinely opened in a different browser from the one that signed up."""
+    user = service.verify_email(db, body.token)
+    if user is None:
+        raise HTTPException(400, "invalid or expired confirmation link")
+    token = service.create_session(db, user.id)
+    db.commit()
+    logger.info("email confirmed for %s", user.id)
+    _set_session_cookie(response, token)
+    return _user_payload(user)
+
+
+@router.post("/resend-verification")
+def resend_verification(
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Issue a fresh confirmation link. Requires a session rather than an
+    email in the body: that way it can't be turned into a way of mailing
+    strangers, and it can't be used to probe which addresses exist."""
+    if user.email_verified_at is not None:
+        return {"ok": True}  # idempotent: nothing to confirm
+    # per user; every hit sends a real email on our domain
+    ratelimit.enforce(
+        f"verify:user:{user.id}",
+        settings.verify_resend_rate_limit,
+        settings.verify_resend_rate_window_minutes,
+    )
+    verification = service.create_email_verification(db, user.id)
+    db.commit()
+    background.add_task(
+        email_service.send_verification,
+        user.email,
+        f"{settings.app_base_url}/verify?token={verification}",
+    )
+    return {"ok": True}
 
 
 @router.post("/login")

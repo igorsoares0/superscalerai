@@ -7,6 +7,8 @@ import uuid
 import pytest
 
 from app.core.config import settings
+from app.database.models import User
+from app.database.session import SessionLocal
 from app.services import billing
 
 SECRET = "pdl_ntfset_test_secret"
@@ -96,9 +98,6 @@ def user_id_of(client) -> str:
 
 def set_credits(user_id: str, balance: int) -> None:
     """Spend down the month's credits without going through a job."""
-    from app.database.models import User
-    from app.database.session import SessionLocal
-
     with SessionLocal() as db:
         db.get(User, user_id).credits = balance
         db.commit()
@@ -160,6 +159,66 @@ def test_signature_tampered_body_fails():
     assert not billing.verify_paddle_signature(b'{"a": 2}', header, SECRET, 300)
 
 
+# ---- whose transaction is this ----
+
+
+def test_custom_data_cannot_hijack_someone_elses_account(client):
+    """custom_data.user_id is typed by the browser that opened the checkout.
+
+    Naming a victim there used to repoint the victim's row at the buyer's
+    subscription. The victim's own renewals then arrived matching nobody —
+    their credits would simply stop, for the price of one Basic month.
+    """
+    victim = user_id_of(client)
+    victim_sub = new_sub()
+    post_webhook(client, completed_event(victim, subscription_id=victim_sub))
+    set_credits(victim, 10)
+
+    # the attacker pays for their own subscription, naming the victim
+    attacker_sub = new_sub()
+    r = post_webhook(client, completed_event(victim, subscription_id=attacker_sub))
+    assert r.json()["status"] == "ignored"
+
+    with SessionLocal() as db:
+        assert db.get(User, victim).paddle_subscription_id == victim_sub  # still theirs
+    assert client.get("/credits").json()["balance"] == 10  # untouched
+
+    # and the victim's real renewal still lands
+    assert post_webhook(
+        client, completed_event(victim, subscription_id=victim_sub)
+    ).json()["status"] == "renewed"
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+def test_renewal_is_matched_by_subscription_without_custom_data(client):
+    """The durable link: Paddle isn't guaranteed to carry the checkout's
+    custom_data onto later renewals, so the subscription id has to be enough
+    on its own."""
+    uid = user_id_of(client)
+    sub = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=sub))
+    set_credits(uid, 5)
+    r = post_webhook(client, completed_event(uid, subscription_id=sub, tagged=False))
+    assert r.json()["status"] == "renewed"
+    assert client.get("/credits").json()["balance"] == BASIC
+
+
+def test_resubscribing_after_cancel_still_works(client):
+    """The guard must not lock out the legitimate case: once the cancel
+    webhook clears the link, a fresh checkout is a first checkout again."""
+    uid = user_id_of(client)
+    first = new_sub()
+    post_webhook(client, completed_event(uid, subscription_id=first))
+    post_webhook(client, canceled_event(uid, subscription_id=first))
+
+    second = new_sub()
+    assert post_webhook(
+        client, completed_event(uid, subscription_id=second)
+    ).json()["status"] == "renewed"
+    with SessionLocal() as db:
+        assert db.get(User, uid).paddle_subscription_id == second
+
+
 # ---- subscription lifecycle ----
 
 
@@ -183,9 +242,10 @@ def test_first_charge_activates_plan(client):
 
 def test_renewal_resets_balance_instead_of_adding(client):
     uid = user_id_of(client)
-    post_webhook(client, completed_event(uid))
+    sub = new_sub()  # a real renewal carries the SAME one
+    post_webhook(client, completed_event(uid, subscription_id=sub))
     set_credits(uid, 40)  # spend part of the month, then renew
-    assert post_webhook(client, completed_event(uid)).json()["status"] == "renewed"
+    assert post_webhook(client, completed_event(uid, subscription_id=sub)).json()["status"] == "renewed"
     assert client.get("/credits").json()["balance"] == BASIC  # 250, not 290
 
 

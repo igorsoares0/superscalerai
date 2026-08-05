@@ -49,7 +49,10 @@
       "Bash(.venv-wsl/bin/python -c ' *)",
       "Bash(docker build *)",
       "Bash(SITE_DOMAIN=example.test ACME_EMAIL=a@b.test docker compose config)",
-      "Bash(docker run *)"
+      "Bash(docker run *)",
+      "Bash(.venv-wsl/bin/python -m pytest tests/ -q)",
+      "Bash(.venv-wsl/bin/python -)",
+      "Bash(.venv-wsl/bin/python -m pytest tests/test_billing.py -q -k \"hijack or resubscribing or without_custom_data\")"
     ]
   }
 }

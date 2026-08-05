@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -18,14 +18,18 @@ def _owned_image(image_id: str, db: Session, user: User) -> ImageRecord:
 
 
 def _serve(key: str, download_name: str | None = None) -> Response:
+    # Streamed, not read whole: an enhanced PNG runs to tens of MB and a
+    # handful of parallel downloads used to sit in memory all at once.
+    # storage.stream resolves the file eagerly, so a missing one still lands
+    # here as a 404 instead of a truncated 200.
     try:
-        data = get_storage().get(key)
+        chunks = get_storage().stream(key)
     except FileNotFoundError:
         raise HTTPException(404, "file missing from storage") from None
     headers = {}
     if download_name:
         headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
-    return Response(data, media_type=media_type_for(key), headers=headers)
+    return StreamingResponse(chunks, media_type=media_type_for(key), headers=headers)
 
 
 @router.get("/{image_id}")

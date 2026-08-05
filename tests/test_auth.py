@@ -16,8 +16,10 @@ def test_register_login_logout_flow():
 
     r = client.post("/auth/register", json=creds)
     assert r.status_code == 201
-    assert r.json()["credits"] == settings.signup_bonus_credits
-    assert "session" in client.cookies
+    # signing up earns nothing: the bonus waits for a confirmed address
+    assert r.json()["credits"] == 0
+    assert r.json()["email_verified"] is False
+    assert "session" in client.cookies  # but you are logged in and can look around
 
     assert client.get("/auth/me").json()["email"] == creds["email"]
 

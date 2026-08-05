@@ -19,6 +19,25 @@ def test_upload_rejects_non_image(client):
     assert r.status_code == 415
 
 
+def test_upload_rejects_truncated_image(client):
+    """A cut-off PNG raises a plain OSError, not UnidentifiedImageError — it
+    used to come back as a 500 that anyone could trigger for free."""
+    r = client.post("/images/upload", files={"file": ("t.png", png_bytes()[:80], "image/png")})
+    assert r.status_code == 415
+
+
+def test_upload_rejects_decompression_bomb(client):
+    """20000x12000 declared in 227 KB: PIL refuses to decode the header at
+    all, so the pixel check further down never got to run."""
+    from app.core.config import settings
+
+    bomb = png_bytes(size=(20000, 12000))
+    assert len(bomb) < settings.max_upload_mb * 1024 * 1024  # sails past the size cap
+    r = client.post("/images/upload", files={"file": ("t.png", bomb, "image/png")})
+    assert r.status_code == 413
+    assert str(settings.max_image_px) in r.json()["detail"]
+
+
 def test_download_original_roundtrip(client):
     data = png_bytes()
     r = client.post("/images/upload", files={"file": ("t.png", data, "image/png")})

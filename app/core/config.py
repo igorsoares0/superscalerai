@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The sandbox catalog (product pro_01kxhfxj722hfs6bqpfhcs46d1), and the dev
@@ -12,17 +13,28 @@ SANDBOX_PRICE_PRO = "pri_01kxhgnzse29n9pg7sz5y74jmp"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # validate_assignment so that assigning a plain string to a SecretStr
+    # field (which tests do) still produces a SecretStr, rather than a raw
+    # str that blows up on .get_secret_value() far from the assignment.
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", validate_assignment=True
+    )
 
+    # SecretStr on everything that would be a credential in a log. The repr of
+    # a settings object turns up in places nobody plans for — a pytest
+    # assertion diff, an exception rendered by a framework, a debug print —
+    # and it used to carry the live Replicate token with it. Unwrap with
+    # .get_secret_value() at the point of use; note that an f-string does NOT
+    # unwrap, it masks, so a missed call fails loudly rather than leaking.
     environment: str = "dev"  # "production" turns on the boot checks below
-    database_url: str = "sqlite:///./dev.db"
-    replicate_api_token: str = ""
+    database_url: SecretStr = SecretStr("sqlite:///./dev.db")  # carries the DB password
+    replicate_api_token: SecretStr = SecretStr("")
     storage_dir: Path = Path("storage")
     # R2 (S3-compatible) object storage; all four set -> S3 backend,
     # otherwise files stay on local disk (dev default)
     r2_account_id: str = ""
-    r2_access_key_id: str = ""
-    r2_secret_access_key: str = ""
+    r2_access_key_id: str = ""  # an identifier, not a credential — pairs with the secret
+    r2_secret_access_key: SecretStr = SecretStr("")
     r2_bucket: str = ""
     max_upload_mb: int = 25
     # Longest input edge. GPU cost grows ~quadratically with size (~$0.08 at
@@ -30,6 +42,22 @@ class Settings(BaseSettings):
     # at a loss besides being slow/flaky on the provider.
     max_image_px: int = 3072
     max_concurrent_jobs: int = 4  # Replicate 429s around 8 parallel predictions
+    # Ceiling on jobs in flight (running + waiting) across the whole app.
+    # Not a memory bound — only max_concurrent_jobs of these hold an image at
+    # once — but a bound on how long the last person in line waits, and on how
+    # far the queue can grow while nobody is watching. At the default 4 workers
+    # and 30-90s a job, 20 is a worst case of ~7 minutes; production runs ONE
+    # worker (docker-compose.yml), where the same 20 is ~30 minutes, so tune it
+    # there against the wait you're willing to make someone sit through.
+    # Over the limit the API answers 503 and charges nothing.
+    max_queued_jobs: int = 20
+    # ...and how many of those one account may hold. Without this the global
+    # ceiling is monopolisable: one user with enough credits fills all 20 and
+    # everybody else gets a 503 caused by a single person. The workspace
+    # submits one image at a time, so 3 is already well past what the UI can
+    # produce — raise it only if a batch flow appears. Over the limit the API
+    # answers 429 (this one IS "you asked too often") and charges nothing.
+    max_queued_jobs_per_user: int = 3
     # A prediction that never settles would hold its slot forever and stall the
     # queue for everyone. Generous: a cold model on Replicate can take minutes
     # to boot before the ~60s of GPU work.
@@ -44,21 +72,34 @@ class Settings(BaseSettings):
     forgot_rate_window_minutes: int = 60
     upload_rate_limit: int = 20  # per user
     upload_rate_window_minutes: int = 1
+    # per user; every hit sends a real email on our domain
+    verify_resend_rate_limit: int = 3
+    verify_resend_rate_window_minutes: int = 60
     session_ttl_days: int = 30
-    # must cover one job at the top credit tier: the trial has to work with
+    # A confirmation link waits for someone to open their mail, unlike a reset
+    # link they asked for a minute ago — hours, not minutes. Expiring is not
+    # a dead end either way: /auth/resend-verification issues a fresh one.
+    email_verification_ttl_hours: int = 24
+    # Paid out when the address is CONFIRMED, never at registration: these are
+    # real GPU minutes, and an address nobody has to receive mail at could
+    # mint them on every signup (app/auth/service.py, grant_signup_bonus).
+    # Must cover one job at the top credit tier: the trial has to work with
     # whatever photo the user actually has (a phone photo lands on the 8 tier)
     signup_bonus_credits: int = 8
     cookie_secure: bool = False  # True behind HTTPS in production
     paddle_environment: str = "sandbox"  # "sandbox" | "production"
-    paddle_api_key: str = ""  # server-side API key (cancel subscriptions etc.)
-    paddle_client_token: str = ""  # client-side token, safe to expose to the browser
-    paddle_webhook_secret: str = ""  # notification-setting endpoint secret (pdl_ntfset_...)
+    paddle_api_key: SecretStr = SecretStr("")  # server-side key (cancel subscriptions etc.)
+    # NOT a SecretStr: this one is handed to the browser by /billing/plans,
+    # which is what it is for. Masking it would break the checkout.
+    paddle_client_token: str = ""
+    # notification-setting endpoint secret (pdl_ntfset_...)
+    paddle_webhook_secret: SecretStr = SecretStr("")
     paddle_webhook_max_age_seconds: int = 300
     # Checkout catalog. Only the ids live here: the monthly allowance is read
     # from the price's custom_data at webhook time (see services/billing.py).
     paddle_price_basic: str = SANDBOX_PRICE_BASIC
     paddle_price_pro: str = SANDBOX_PRICE_PRO
-    resend_api_key: str = ""  # empty = emails are logged instead of sent (dev)
+    resend_api_key: SecretStr = SecretStr("")  # empty = emails logged, not sent (dev)
     email_from: str = "SuperScaler <no-reply@example.com>"
     app_base_url: str = "http://localhost:8000"  # base for links inside emails
     password_reset_ttl_minutes: int = 30
@@ -121,14 +162,19 @@ def config_problems(s: Settings) -> tuple[list[str], list[str]]:
         fatal.append("COOKIE_SECURE is off — session cookies would travel in plain HTTP")
     if not s.app_base_url.startswith("https://") or "localhost" in s.app_base_url:
         fatal.append(f"APP_BASE_URL is {s.app_base_url!r} — password reset links would be broken")
-    if s.database_url.startswith("sqlite"):
+    if s.database_url.get_secret_value().startswith("sqlite"):
         fatal.append("DATABASE_URL still points at SQLite — production runs on Neon")
-    # Password reset is the ONLY way back into an account. Without a working
-    # sender the link is written to the log and nowhere else: the app looks
-    # healthy while every locked-out user stays locked out, and the only signal
-    # is a support ticket.
+    # Email is load-bearing twice over: password reset is the ONLY way back
+    # into an account, and confirmation is the ONLY way to earn the signup
+    # bonus. Without a working sender both links are written to the log and
+    # nowhere else — the app looks healthy while every locked-out user stays
+    # locked out and every new signup lands on an empty account.
     if not s.resend_api_key:
-        fatal.append("RESEND_API_KEY is empty — password reset emails would only be logged")
+        fatal.append(
+            "RESEND_API_KEY is empty — password reset and email confirmation "
+            "links would only be logged, so nobody could recover an account "
+            "or collect their signup credits"
+        )
     if "example.com" in s.email_from:
         fatal.append(
             f"EMAIL_FROM is still {s.email_from!r} — Resend refuses to send from "

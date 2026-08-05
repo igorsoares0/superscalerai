@@ -24,6 +24,30 @@ async function initShell() {
     await fetch("/auth/logout", { method: "POST" });
     location.href = "/login";
   });
+  if (!me.email_verified) showVerifyBanner(me.email);
+}
+
+/* The account is usable unconfirmed — only the free credits are waiting — so
+   this is a banner and not a wall. */
+function showVerifyBanner(email) {
+  const banner = document.getElementById("verify-banner");
+  if (!banner) return;
+  const resend = document.getElementById("verify-resend");
+  document.getElementById("verify-text").textContent =
+    `Confirm your email to collect your free credits. We sent a link to ${email}.`;
+  banner.classList.remove("hidden");
+  banner.classList.add("flex");
+
+  resend.addEventListener("click", async () => {
+    resend.disabled = true;
+    const r = await api("/auth/resend-verification", { method: "POST" });
+    resend.textContent = r.ok
+      ? "Sent — check your inbox"
+      : r.status === 429
+        ? "Too many requests, try later"
+        : "Couldn't send, try again";
+    if (!r.ok && r.status !== 429) resend.disabled = false;
+  });
 }
 
 /* Before/after slider. Both images share the same aspect ratio (2x upscale),

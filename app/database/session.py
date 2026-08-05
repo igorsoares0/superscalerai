@@ -13,7 +13,7 @@ def sqlalchemy_url() -> str:
     explicit driver SQLAlchemy would reach for psycopg2. We ship psycopg
     (v3), so pin the dialect to it.
     """
-    url = settings.database_url
+    url = settings.database_url.get_secret_value()
     for prefix in ("postgres://", "postgresql://"):
         if url.startswith(prefix):
             return "postgresql+psycopg://" + url[len(prefix):]

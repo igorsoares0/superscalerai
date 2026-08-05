@@ -24,7 +24,7 @@ def send_email(to: str, subject: str, html: str, text: str) -> None:
     try:
         r = httpx.post(
             RESEND_API_URL,
-            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            headers={"Authorization": f"Bearer {settings.resend_api_key.get_secret_value()}"},
             json={
                 "from": settings.email_from,
                 "to": [to],
@@ -38,6 +38,31 @@ def send_email(to: str, subject: str, html: str, text: str) -> None:
         logger.info("email sent to %s (%s)", to, r.json().get("id"))
     except httpx.HTTPError:
         logger.exception("failed to send email to %s", to)
+
+
+def send_verification(to: str, verify_url: str) -> None:
+    credits = settings.signup_bonus_credits
+    hours = settings.email_verification_ttl_hours
+    reward = f" and collect your {credits} free credits" if credits > 0 else ""
+    text = (
+        "Welcome to SuperScaler!\n\n"
+        f"Confirm this address{reward} (link expires in {hours} hours):\n{verify_url}\n\n"
+        "If you didn't sign up, you can ignore this email — the account stays "
+        "empty and unusable without this confirmation."
+    )
+    html = f"""\
+<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+  <h2 style="margin:0 0 16px">Confirm your email</h2>
+  <p style="color:#444;line-height:1.5">Welcome to SuperScaler! Confirm this
+  address{reward}. This link expires in {hours} hours.</p>
+  <p style="margin:24px 0">
+    <a href="{verify_url}" style="background:#4b72ff;color:#fff;padding:10px 20px;
+       border-radius:8px;text-decoration:none;font-weight:600">Confirm my email</a>
+  </p>
+  <p style="color:#888;font-size:13px;line-height:1.5">If you didn't sign up, you can
+  ignore this email — the account stays empty and unusable without this confirmation.</p>
+</div>"""
+    send_email(to, "Confirm your SuperScaler email", html, text)
 
 
 def send_password_reset(to: str, reset_url: str) -> None:

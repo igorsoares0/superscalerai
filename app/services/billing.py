@@ -188,7 +188,7 @@ def cancel_subscription(subscription_id: str, immediately: bool = False) -> str 
     base = PADDLE_API_BASE[settings.paddle_environment]
     r = httpx.post(
         f"{base}/subscriptions/{subscription_id}/cancel",
-        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        headers={"Authorization": f"Bearer {settings.paddle_api_key.get_secret_value()}"},
         json={"effective_from": "immediately" if immediately else "next_billing_period"},
         timeout=15,
     )
@@ -205,7 +205,7 @@ def resume_subscription(subscription_id: str) -> None:
     base = PADDLE_API_BASE[settings.paddle_environment]
     r = httpx.patch(
         f"{base}/subscriptions/{subscription_id}",
-        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        headers={"Authorization": f"Bearer {settings.paddle_api_key.get_secret_value()}"},
         json={"scheduled_change": None},
         timeout=15,
     )
@@ -222,7 +222,7 @@ def change_subscription_plan(subscription_id: str, price_id: str, upgrade: bool)
     base = PADDLE_API_BASE[settings.paddle_environment]
     r = httpx.patch(
         f"{base}/subscriptions/{subscription_id}",
-        headers={"Authorization": f"Bearer {settings.paddle_api_key}"},
+        headers={"Authorization": f"Bearer {settings.paddle_api_key.get_secret_value()}"},
         json={
             "items": [{"price_id": price_id, "quantity": 1}],
             "proration_billing_mode": (

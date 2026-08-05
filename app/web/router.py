@@ -67,6 +67,15 @@ def reset(request: Request):
     return templates.TemplateResponse(request, "reset.html", {"page": "reset"})
 
 
+@router.get("/verify", response_class=HTMLResponse)
+def verify(request: Request):
+    """Landing page for the confirmation email link (?token=...). Renders
+    standalone rather than from base.html: the link is routinely opened in a
+    browser with no session, and base.html's app.js would bounce it to
+    /login before the token was ever spent."""
+    return templates.TemplateResponse(request, "verify.html", {"page": "verify"})
+
+
 # Bump when the wording of any of the three pages changes: it is what a
 # customer (and Paddle's reviewer) reads as the version they agreed to.
 LEGAL_UPDATED = "5 August 2026"

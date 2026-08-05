@@ -163,13 +163,39 @@ def _handle_transaction_completed(db: Session, data: dict) -> str:
     plan_slug, credits = plan
 
     subscription_id = data.get("subscription_id")
-    # custom_data is injected at checkout, so it can't be trusted to ride along
-    # on later renewal transactions. Falling back to the subscription we already
-    # track is what keeps a paying customer from silently losing a month of
-    # credits. The lookup is exact: subscription ids are unique at Paddle.
-    user = db.get(User, custom.get("user_id") or "")
-    if user is None and subscription_id:
+    # The subscription we already track comes FIRST: it is durable, unique at
+    # Paddle, and ours. custom_data is injected by the browser that opened the
+    # checkout, so its user_id is worth exactly as much as whoever opened it —
+    # and it isn't guaranteed to ride along on later renewals anyway, which is
+    # why the subscription link has to exist regardless.
+    user = None
+    if subscription_id:
         user = db.scalar(select(User).where(User.paddle_subscription_id == subscription_id))
+    if user is None:
+        # Nothing tracks this subscription yet — a first checkout, where
+        # custom_data is all there is. Honour it only for an account that
+        # isn't already riding another subscription: otherwise anyone could
+        # buy one plan naming a victim's user_id, repoint the victim's row at
+        # it, and orphan their real renewals. Those would then arrive matching
+        # no one and the victim's credits would just stop, for the price of a
+        # single Basic month.
+        claimed = db.get(User, custom.get("user_id") or "")
+        # A one-off transaction carries no subscription_id and so repoints
+        # nothing (apply_renewal only writes the link when there is one).
+        if (
+            claimed is not None
+            and subscription_id is not None
+            and claimed.paddle_subscription_id not in (None, subscription_id)
+        ):
+            logger.warning(
+                "paddle webhook: transaction %s claims user %s, who already rides "
+                "subscription %s — ignoring the claim",
+                transaction_id,
+                claimed.id,
+                claimed.paddle_subscription_id,
+            )
+            claimed = None
+        user = claimed
     if user is None or not transaction_id:
         logger.warning("paddle webhook: no user for transaction %s", transaction_id)
         return "ignored"
@@ -233,7 +259,7 @@ async def paddle_webhook(request: Request, db: Session = Depends(get_db)) -> dic
     failure = billing.signature_failure_reason(
         raw,
         request.headers.get("Paddle-Signature"),
-        settings.paddle_webhook_secret,
+        settings.paddle_webhook_secret.get_secret_value(),
         settings.paddle_webhook_max_age_seconds,
     )
     if failure is not None:

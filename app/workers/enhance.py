@@ -1,18 +1,18 @@
 """Run the enhancement pipeline for a Job row.
 
-MVP: executed in-process via FastAPI BackgroundTasks (threadpool). The same
-function becomes an RQ/Celery task unchanged when we move to real workers.
+MVP: executed in-process on the job pool (app/jobs/queue.py), which is also
+where concurrency is capped — a job that has to wait never gets this far, so
+nothing here blocks holding a thread. The same function becomes an RQ/Celery
+task unchanged when we move to real workers.
 """
 
 import asyncio
 import io
 import logging
-import threading
 import time
 
 from PIL import Image
 
-from app.core.config import settings
 from app.database.models import ImageRecord, Job
 from app.database.session import SessionLocal
 from app.pipeline.factory import build_pipeline
@@ -20,18 +20,8 @@ from app.services import credits, storage
 
 logger = logging.getLogger(__name__)
 
-# Each job fires several Replicate predictions and 8 in parallel already hit
-# 429 (calibration, 2026-07-16). Excess jobs block here on their threadpool
-# thread, still "queued" in the DB.
-_slots = threading.BoundedSemaphore(settings.max_concurrent_jobs)
-
 
 def run_enhancement(job_id: str) -> None:
-    with _slots:
-        _run(job_id)
-
-
-def _run(job_id: str) -> None:
     with SessionLocal() as db:
         job = db.get(Job, job_id)
         if job is None:
@@ -55,10 +45,14 @@ def _run(job_id: str) -> None:
             job.status = "completed"
             image_row.enhanced_path = state.artifacts["enhanced_path"]
             image_row.thumb_path = state.artifacts["thumb_path"]
-        except Exception as exc:  # noqa: BLE001 — job boundary
+        except Exception:  # noqa: BLE001 — job boundary
             logger.exception("job %s failed", job_id)
             job.status = "failed"
-            job.error_message = str(exc)
+            # error_message is served to the user by GET /jobs/{id}, and the
+            # exception text is written for us: provider URLs, prediction ids,
+            # filesystem paths from an OSError. The traceback above is the
+            # place that keeps all of it; the API gets a sentence.
+            job.error_message = "The enhancement failed."
             credits.refund_job(db, job)
         finally:
             job.execution_time = time.monotonic() - start
