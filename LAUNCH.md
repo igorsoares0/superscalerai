@@ -23,10 +23,16 @@ saída 6144×4608) tem pico de ~3,0 GB num único job. Numa máquina de 4 GB iss
 encosta no teto mesmo com `max_concurrent_jobs=1`, e o OOM killer derruba o
 uvicorn inteiro, não só o job.
 
-**Decidido 2026-07-29: rescale do CX22 (4 GB) para o CX32 (8 GB)**, ~€1,80/mês a
-mais, em vez de otimizar o `color_match` (que fica adiado no bloco 4). O servidor
-hospeda outros projetos do usuário, então o `mem_limit` do compose deixa de ser
-higiene e vira isolamento: sem ele, um OOM deste app derruba os outros junto.
+**Decidido 2026-07-29:** ir para 8 GB em vez de otimizar o `color_match` (que
+fica adiado no bloco 4). **Executado 2026-08-05** com uma máquina nova de 8 GB
+que vai hospedar TODOS os projetos do usuário (Next.js atual + mais um + dois
+Python + este) — servidor dedicado foi cogitado e recusado por custo.
+
+Por ser compartilhada, o `mem_limit` do compose deixa de ser higiene e vira
+isolamento: sem ele, um OOM deste app derruba os outros junto. E o orçamento
+muda — cabe `max_concurrent_jobs=1` com `mem_limit: 3.5g` e `cpus: 2.0`, não os
+2 jobs que uma caixa dedicada aguentaria. Medido na imagem real em 2026-08-05:
+**100 MB em repouso**; os ~3 GB são um pico de 60–90s durante o job.
 
 ---
 
@@ -80,9 +86,21 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 - [ ] `paddle_environment=production`
 
 ### Servidor
-- [ ] **Rescale CX22 → CX32** (desligar o servidor; escolher a opção que NÃO
-      cresce o disco, senão o downgrade fica bloqueado pra sempre). Derruba os
-      outros projetos por alguns minutos — agendar. Snapshot antes.
+- [x] ~~**Rescale CX22 → CX32**~~ RESOLVIDO DE OUTRO JEITO 2026-08-05: o usuário
+      contratou uma máquina nova de 8 GB **para todos os projetos** (Next.js
+      atual + mais um + dois projetos Python + este). Não há rescale nem
+      downtime dos outros projetos — há uma migração para a caixa nova.
+      Servidor dedicado foi cogitado e **recusado** (custo, ~€5/mês, sem receita
+      ainda). Consequências, todas já aplicadas no compose:
+      `max_concurrent_jobs=1`, `mem_limit: 3.5g`, `cpus: 2.0`.
+      Medido em 2026-08-05 na imagem real: **100 MB em repouso**; os ~3 GB são
+      um pico de 60–90s por job. Orçamento da caixa: ~1,7 GB de base para os
+      cinco projetos + SO, ~3,5 GB de teto para um job daqui, sobra folga.
+      **Pendente de decisão de arquitetura:** um proxy só para os cinco apps
+      (só um processo pode segurar 80/443) — ver `deploy/README.md`.
+      **Pendente de higiene:** `mem_limit` nos OUTROS projetos também, senão
+      quem escolhe a vítima do OOM é o kernel, e ele costuma escolher o maior
+      processo, que pode ser um inocente.
 - [x] Dockerfile + docker-compose (com `mem_limit` e `restart: always`)
       FEITO 2026-08-05. `Dockerfile` (multi-stage com uv, venv do lock, usuário
       não-root, HEALTHCHECK no `/health`), `.dockerignore`, `docker-compose.yml`
@@ -114,7 +132,10 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 - [ ] `cookie_secure=True`
 - [ ] `workers=1` explícito no compose
       (`run_migrations()` roda no import em `app/main.py:22` e correria com N workers)
-- [ ] `max_concurrent_jobs=2` (default do código é 4 — explicitar no .env)
+- [x] `max_concurrent_jobs` — **1** (não 2), já no `docker-compose.yml` junto com
+      `cookie_secure`, `trust_proxy_headers` e `workers=1`. Caixa compartilhada:
+      ver o item do servidor acima. Volta a 2 quando o pico de memória do
+      pós-processamento cair (bloco 4).
 - [ ] Hetzner Cloud Firewall: 80/443 abertos, SSH restrito ao seu IP
 - [x] systemd para o compose
       FEITO 2026-08-05: `deploy/superscaler.service` (oneshot + RemainAfterExit,
@@ -399,6 +420,25 @@ Nada aberto aqui desde 2026-08-01 — o único item da seção está feito.
       máxima 0 rodando em CPU contra `validation/outputs/` — US$0 de GPU,
       zero recalibração. *Gatilho: querer voltar pra 4 GB, ou subir
       `max_image_px` (o pico cresce com o quadrado dele).*
+
+      **Revisado 2026-08-05, lendo o arquivo de novo — duas correções:**
+      1. O `sharpen()` também aloca ~7 buffers do tamanho da imagem (`blurred`,
+         `gray`, `grad`, `gate`, `sharpened`, `lo`, `hi`), ~340 MB cada na saída
+         máxima. Consertar só o `_decompose` provavelmente NÃO entrega os
+         400 MB — o pico desce até o segundo maior consumidor. A mesma técnica
+         serve (halo de ~8 px lá, contra 256 aqui), mas a estimativa vira ~1 dia,
+         não meio. **Medir o pico por estágio antes de mexer** — uma hora, e
+         evita otimizar por suposição.
+      2. "BIT A BIT" é a meta e o critério do teste, não uma garantia dada de
+         antemão: o argumento (cada pixel depende só da vizinhança de 248 px,
+         sem acumulação entre pixels) é sólido, mas resta o arredondamento do
+         OpenCV em buffers de forma diferente. Se aparecer diferença de 1/255
+         na borda das faixas, isso é decisão do usuário, não afrouxamento
+         silencioso do teste.
+
+      *Gatilho novo (2026-08-05): a caixa de 8 GB é compartilhada com 4 outros
+      projetos, então `max_concurrent_jobs` está em 1. Este item é o que
+      devolve o 2 — não bloqueia o lançamento, mas é o teto de throughput.*
 - [ ] Redis/RQ — só quando precisar da segunda instância.
       Ponto de troca já isolado em `app/jobs/queue.py`.
 

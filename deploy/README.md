@@ -39,13 +39,31 @@ In-flight jobs die with the old container. The next boot marks them failed and
 refunds the credits automatically, but the user loses the result — deploy when
 it's quiet until graceful drain exists (LAUNCH.md, block 3).
 
-## Memory
+## Memory and CPU on a shared box
 
-`mem_limit: 6g` in the compose file is sized for `MAX_CONCURRENT_JOBS=2` at the
-measured worst case of ~3 GB peak for a single job at `MAX_IMAGE_PX=3072`. The
-limit has to cover concurrency × peak, not one job: under it the kernel kills
-uvicorn — every request dies, not just the greedy job. Change one, change the
-other. Halving the peak is a known, unstarted piece of work (LAUNCH.md block 4).
+This box also runs the Next.js apps and the other Python projects, so the
+compose file is sized as a guest, not an owner: `MAX_CONCURRENT_JOBS=1`,
+`mem_limit: 3.5g`, `cpus: 2.0`.
+
+The numbers come from measurement: the app idles at 100 MB, and a single job
+peaks at ~3 GB for 60-90 seconds at `MAX_IMAGE_PX=3072`. The limit has to cover
+concurrency × peak — change one, change the other.
+
+Two things follow from sharing:
+
+- **Give every other project on this box a `mem_limit` too.** Over its limit,
+  only that container dies. Without limits the kernel picks the victim during
+  an out-of-memory event, and it tends to pick the largest process, which may
+  well be a bystander.
+- **One reverse proxy for all of them.** Only one process can hold ports 80 and
+  443. If something already serves them here, drop the `caddy` service from
+  this compose file and move the site block from `Caddyfile` into the existing
+  proxy's config — keeping the headers and the `X-Forwarded-For` override,
+  which is what makes `TRUST_PROXY_HEADERS=true` safe.
+
+Raising throughput later doesn't need a bigger box: the strip-wise rewrite of
+the post-processor drops the peak to a few hundred MB, which is what buys back
+`MAX_CONCURRENT_JOBS` (LAUNCH.md, block 4).
 
 ## After the first real checkout
 

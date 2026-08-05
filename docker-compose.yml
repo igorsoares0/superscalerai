@@ -20,18 +20,36 @@ services:
       COOKIE_SECURE: "true"
       # Safe ONLY because Caddy overwrites X-Forwarded-For (deploy/Caddyfile).
       TRUST_PROXY_HEADERS: "true"
-      # Code default is 4. Two is what the memory limit below is sized for.
-      MAX_CONCURRENT_JOBS: "2"
+      # Code default is 4. ONE, because this box is shared with the other
+      # projects — see the memory note below. A second job doesn't fail, it
+      # waits its turn (a job takes 30-90s, so the queue is short).
+      MAX_CONCURRENT_JOBS: "1"
     expose:
       - "8000"
-    # MAX_CONCURRENT_JOBS × the worst-case peak of a single job (~3 GB at
-    # max_image_px=3072, measured) is what has to fit here — not one job's
-    # peak. Under the limit the kernel kills uvicorn, not the job, so every
-    # other user's request dies too. Lower MAX_CONCURRENT_JOBS to 1 if you
-    # want 3g back for the other projects on this box.
+    # What has to fit is MAX_CONCURRENT_JOBS × the worst-case peak of ONE job
+    # (~3 GB at max_image_px=3072, measured), not the average. At rest the app
+    # uses 100 MB — the 3 GB is a 60-90s spike while a job post-processes.
+    #
+    # Sized for an 8 GB box shared with the Next.js apps and the other Python
+    # projects: ~3.5 GB here leaves ~4 GB for everyone else plus the OS.
+    # Going back to 2 concurrent jobs needs either 6g (which this box doesn't
+    # have to spare) or the strip-wise rewrite of the post-processor, which
+    # drops the peak to a few hundred MB (LAUNCH.md, block 4).
+    #
+    # The limit is what protects the NEIGHBOURS: over it, only this container
+    # dies. Without it the kernel picks the victim, and it usually picks the
+    # biggest process — which could be your Next.js app rather than the
+    # culprit. Give every other project on this box a mem_limit too.
+    #
     # Swap is deliberately left at the default (container may swap up to the
     # limit again): swapping a job is slow, being OOM-killed is downtime.
-    mem_limit: 6g
+    mem_limit: 3.5g
+    # OpenCV grabs every core it can find, and the CPU stages (denoise, colour
+    # match, sharpen) run flat out for tens of seconds. Uncapped, one upscale
+    # makes every other site on the box feel slow exactly while someone is
+    # using this one. Half the vCPUs: jobs get slightly slower, neighbours
+    # stop noticing.
+    cpus: 2.0
     volumes:
       # Only used when R2 is unconfigured — but an unconfigured R2 plus no
       # volume means results vanish on redeploy with no error anywhere.
