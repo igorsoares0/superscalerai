@@ -1,6 +1,11 @@
 import pytest
 
-from app.core.config import Settings, config_problems
+from app.core.config import (
+    SANDBOX_PRICE_BASIC,
+    SANDBOX_PRICE_PRO,
+    Settings,
+    config_problems,
+)
 
 
 def production(**overrides) -> Settings:
@@ -13,6 +18,8 @@ def production(**overrides) -> Settings:
         paddle_api_key="pdl_live_key",
         paddle_client_token="live_token",
         paddle_webhook_secret="pdl_ntfset_live",
+        paddle_price_basic="pri_live_basic",
+        paddle_price_pro="pri_live_pro",
         cookie_secure=True,
         app_base_url="https://superscaler.example",
         trust_proxy_headers=True,
@@ -41,6 +48,16 @@ def test_a_correct_production_config_passes():
         {"paddle_api_key": ""},
         {"paddle_client_token": ""},
         {"paddle_environment": "sandbox"},
+        # PADDLE_ENVIRONMENT can say production while the ids still point at
+        # sandbox prices: nothing else in the config contradicts it
+        {"paddle_price_basic": SANDBOX_PRICE_BASIC},
+        {"paddle_price_pro": SANDBOX_PRICE_PRO},
+        {"paddle_price_basic": ""},
+        {"paddle_price_pro": ""},
+        # no working sender = the password reset link goes to the log, and
+        # anyone locked out stays locked out
+        {"resend_api_key": ""},
+        {"email_from": "SuperScaler <no-reply@example.com>"},
         {"cookie_secure": False},
         {"app_base_url": "http://localhost:8000"},
         {"app_base_url": "http://superscaler.example"},  # https is the point
@@ -50,6 +67,16 @@ def test_a_correct_production_config_passes():
 def test_each_silent_failure_is_fatal(override):
     fatal, _ = config_problems(production(**override))
     assert len(fatal) == 1, fatal
+
+
+def test_the_sandbox_defaults_are_what_a_forgotten_swap_looks_like():
+    """The whole point of comparing against the constants: a production config
+    that simply never touched PADDLE_PRICE_* is the realistic mistake, and it
+    has to be caught even though every other Paddle setting is live."""
+    fatal, _ = config_problems(
+        production(paddle_price_basic=SANDBOX_PRICE_BASIC, paddle_price_pro=SANDBOX_PRICE_PRO)
+    )
+    assert len(fatal) == 2, fatal
 
 
 def test_all_problems_are_reported_at_once():
@@ -66,8 +93,6 @@ def test_all_problems_are_reported_at_once():
         {"rate_limit_enabled": False},
         {"trust_proxy_headers": False},
         {"r2_bucket": ""},
-        {"resend_api_key": ""},
-        {"email_from": "SuperScaler <no-reply@example.com>"},
     ],
 )
 def test_degraded_but_serviceable_config_only_warns(override):

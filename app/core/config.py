@@ -2,6 +2,14 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The sandbox catalog (product pro_01kxhfxj722hfs6bqpfhcs46d1), and the dev
+# default so a fresh clone can open a checkout with no config at all.
+# Paddle price ids are `pri_01...` in BOTH environments — nothing in the string
+# says which one it belongs to — so "did anyone swap these for the live ones?"
+# is only answerable by comparing against these constants.
+SANDBOX_PRICE_BASIC = "pri_01kxhgnzn8v3hmx52s8fc8dmzn"
+SANDBOX_PRICE_PRO = "pri_01kxhgnzse29n9pg7sz5y74jmp"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -46,6 +54,10 @@ class Settings(BaseSettings):
     paddle_client_token: str = ""  # client-side token, safe to expose to the browser
     paddle_webhook_secret: str = ""  # notification-setting endpoint secret (pdl_ntfset_...)
     paddle_webhook_max_age_seconds: int = 300
+    # Checkout catalog. Only the ids live here: the monthly allowance is read
+    # from the price's custom_data at webhook time (see services/billing.py).
+    paddle_price_basic: str = SANDBOX_PRICE_BASIC
+    paddle_price_pro: str = SANDBOX_PRICE_PRO
     resend_api_key: str = ""  # empty = emails are logged instead of sent (dev)
     email_from: str = "SuperScaler <no-reply@example.com>"
     app_base_url: str = "http://localhost:8000"  # base for links inside emails
@@ -82,12 +94,34 @@ def config_problems(s: Settings) -> tuple[list[str], list[str]]:
         fatal.append(
             f"PADDLE_ENVIRONMENT is {s.paddle_environment!r} — sandbox prices take no real money"
         )
+    # PADDLE_ENVIRONMENT alone doesn't cover this: pointing the live API at a
+    # sandbox price id passes every other check, boots clean, and then every
+    # checkout either fails or bills nothing.
+    for name, value, sandbox in (
+        ("PADDLE_PRICE_BASIC", s.paddle_price_basic, SANDBOX_PRICE_BASIC),
+        ("PADDLE_PRICE_PRO", s.paddle_price_pro, SANDBOX_PRICE_PRO),
+    ):
+        if not value:
+            fatal.append(f"{name} is empty — that plan's checkout can't open")
+        elif value == sandbox:
+            fatal.append(f"{name} is still the sandbox price — it takes no real money")
     if not s.cookie_secure:
         fatal.append("COOKIE_SECURE is off — session cookies would travel in plain HTTP")
     if not s.app_base_url.startswith("https://") or "localhost" in s.app_base_url:
         fatal.append(f"APP_BASE_URL is {s.app_base_url!r} — password reset links would be broken")
     if s.database_url.startswith("sqlite"):
         fatal.append("DATABASE_URL still points at SQLite — production runs on Neon")
+    # Password reset is the ONLY way back into an account. Without a working
+    # sender the link is written to the log and nowhere else: the app looks
+    # healthy while every locked-out user stays locked out, and the only signal
+    # is a support ticket.
+    if not s.resend_api_key:
+        fatal.append("RESEND_API_KEY is empty — password reset emails would only be logged")
+    if "example.com" in s.email_from:
+        fatal.append(
+            f"EMAIL_FROM is still {s.email_from!r} — Resend refuses to send from "
+            "a domain that isn't verified"
+        )
 
     warnings = []
     if not s.rate_limit_enabled:
@@ -99,8 +133,4 @@ def config_problems(s: Settings) -> tuple[list[str], list[str]]:
         )
     if not s.r2_bucket:
         warnings.append("no R2 bucket configured — uploads and results stay on the local disk")
-    if not s.resend_api_key:
-        warnings.append("RESEND_API_KEY is empty — password reset emails are only logged")
-    if "example.com" in s.email_from:
-        warnings.append(f"EMAIL_FROM is still {s.email_from!r}")
     return fatal, warnings

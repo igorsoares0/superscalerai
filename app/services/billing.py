@@ -41,11 +41,14 @@ class Plan:
     currency: str = "USD"
 
 
-# Sandbox catalog (product pro_01kxhfxj722hfs6bqpfhcs46d1); production gets
-# its own price ids via config when we set the live account up.
+# Price ids come from config (sandbox catalog by default, see core/config.py);
+# production sets PADDLE_PRICE_* to the live ones and the boot check refuses to
+# serve if it's still the sandbox pair. `credits` and `amount` are display only
+# — the real allowance is the price's custom_data, read at webhook time — so
+# they have to be kept in step with the Paddle dashboard by hand.
 PLANS = [
-    Plan("pri_01kxhgnzn8v3hmx52s8fc8dmzn", "basic", "Basic", 250, 1200),
-    Plan("pri_01kxhgnzse29n9pg7sz5y74jmp", "pro", "Pro", 1000, 3900),
+    Plan(settings.paddle_price_basic, "basic", "Basic", 250, 1200),
+    Plan(settings.paddle_price_pro, "pro", "Pro", 1000, 3900),
 ]
 
 # Every plan bills monthly. Real periods run 28-31 days, so this is only the

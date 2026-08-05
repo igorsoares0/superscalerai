@@ -50,7 +50,17 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
       Hoje é `no-reply@example.com`. Sem domínio verificado o Resend recusa o
       envio, e `app/services/email.py:38` engole a falha em log porque roda em
       BackgroundTask — ou seja, **recuperação de senha morre em silêncio**.
+      Desde 2026-08-01 os dois são **fatais** no boot, não avisos: o modo de
+      falha (todo mundo que esquece a senha fica trancado, e você descobre por
+      ticket) é caro demais para subir com ele.
 - [ ] Trocar os price IDs de sandbox pelos de produção
+      `PADDLE_PRICE_BASIC` / `PADDLE_PRICE_PRO` no .env (antes eram hardcoded
+      em `app/services/billing.py`). Também **fatal** desde 2026-08-01: os ids
+      de sandbox são o default, e `PADDLE_ENVIRONMENT=production` sozinho não
+      contradizia eles — passava em tudo e todo checkout ia ao ar sem cobrar.
+      Lembre do `custom_data` de cada preço na Paddle:
+      `{"app": "superscaler", "plan": "<slug>", "credits": <mensalidade>}` —
+      é dele que sai a mensalidade real (`plan_in_transaction`).
 - [ ] Registrar o webhook da Paddle na URL pública nova
 - [ ] `paddle_environment=production`
 
@@ -90,9 +100,21 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
       localhost, `database_url` ainda em SQLite.
       **Avisos** (loga e sobe): rate limit desligado, `trust_proxy_headers=False`
       (atrás do Caddy todo cliente vira um IP só e o limite por IP estrangula
-      todo mundo junto), sem bucket R2, sem `RESEND_API_KEY`, `EMAIL_FROM` ainda
-      em example.com. Isso cobre boa parte do checklist de `.env` acima — o
-      deploy erra alto e cedo em vez de silencioso.
+      todo mundo junto), sem bucket R2. Isso cobre boa parte do checklist de
+      `.env` acima — o deploy erra alto e cedo em vez de silencioso.
+
+      **Estendida 2026-08-01** (review de segurança), dois furos no caminho do
+      dinheiro e do login que passavam por todos os checks:
+      - `PADDLE_PRICE_BASIC` / `PADDLE_PRICE_PRO` vazios ou **ainda iguais aos
+        de sandbox** → fatal. Os ids agora vêm da config; antes eram hardcoded
+        e o guard não olhava para eles. Detecção por comparação com as
+        constantes `SANDBOX_PRICE_*`, não por prefixo: na Paddle Billing os ids
+        são `pri_01...` nos dois ambientes e **nada na string diz qual é qual**.
+      - `RESEND_API_KEY` vazio e `EMAIL_FROM` em example.com passaram de aviso
+        a fatal (ver bloco Contas).
+      Testes: 5 casos novos em `test_each_silent_failure_is_fatal` mais
+      `test_the_sandbox_defaults_are_what_a_forgotten_swap_looks_like` (o erro
+      realista: config toda live, ninguém tocou nos `PADDLE_PRICE_*`).
       Testes: `tests/test_config_checks.py` (17).
 - [x] `[código]` Timeout no polling da Replicate
       FEITO 2026-08-01. O `while pred["status"] in ("starting","processing")`

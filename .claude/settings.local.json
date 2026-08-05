@@ -45,7 +45,8 @@
       "Bash(UV_PROJECT_ENVIRONMENT=.venv-wsl timeout 600 uv run pytest -q)",
       "Bash(ENVIRONMENT=production UV_PROJECT_ENVIRONMENT=.venv-wsl uv run python -c \"import app.main\")",
       "Bash(node --check app/web/static/billing.js)",
-      "Bash(node --check app/web/static/account.js)"
+      "Bash(node --check app/web/static/account.js)",
+      "Bash(.venv-wsl/bin/python -c ' *)"
     ]
   }
 }
