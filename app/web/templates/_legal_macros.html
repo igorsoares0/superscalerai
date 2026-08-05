@@ -1,0 +1,6 @@
+{# Renders an operator detail, or a placeholder loud enough that nobody ships
+   it by accident. In production it can't get this far: config_problems()
+   makes an empty LEGAL_* fatal at boot (app/core/config.py). #}
+{% macro fill(value, env_var) -%}
+  {%- if value %}{{ value }}{% else %}<mark class="rounded bg-err/20 px-1 text-err">[ set {{ env_var }} in .env ]</mark>{% endif -%}
+{%- endmacro %}

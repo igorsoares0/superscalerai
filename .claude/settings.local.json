@@ -46,7 +46,10 @@
       "Bash(ENVIRONMENT=production UV_PROJECT_ENVIRONMENT=.venv-wsl uv run python -c \"import app.main\")",
       "Bash(node --check app/web/static/billing.js)",
       "Bash(node --check app/web/static/account.js)",
-      "Bash(.venv-wsl/bin/python -c ' *)"
+      "Bash(.venv-wsl/bin/python -c ' *)",
+      "Bash(docker build *)",
+      "Bash(SITE_DOMAIN=example.test ACME_EMAIL=a@b.test docker compose config)",
+      "Bash(docker run *)"
     ]
   }
 }

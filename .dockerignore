@@ -1,0 +1,22 @@
+# Everything the image must never carry: secrets, local state, other people's
+# virtualenvs (they hold absolute /mnt/c paths and would shadow /srv/.venv).
+.env
+*.env
+!.env.example
+.venv*/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.pytest_cache/
+.claude/
+dev.db
+storage/
+validation/
+tests/
+migrations/versions/__pycache__/
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+deploy/

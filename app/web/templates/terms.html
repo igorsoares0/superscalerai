@@ -1,0 +1,118 @@
+{% extends "legal.html" %}
+{% from "_legal_macros.html" import fill %}
+{% block title %}Terms of Service{% endblock %}
+{% block heading %}Terms of Service{% endblock %}
+{% block content %}
+
+<p>These terms are the agreement between you and
+  <strong>{{ fill(legal.entity, "LEGAL_ENTITY") }}</strong>
+  ({{ fill(legal.address, "LEGAL_ADDRESS") }}), who operates SuperScaler. By
+  creating an account you accept them.</p>
+
+<h2>1. What SuperScaler does</h2>
+<p>SuperScaler enlarges and restores photographs using AI models. Results are
+  generated, not measured: the service reconstructs plausible detail that was
+  not in your original file. Output quality varies with the input, and repeated
+  runs on the same image can differ. We do not promise any particular result.</p>
+
+<h2>2. Your account</h2>
+<p>You need an account to use the service. Keep your password to yourself —
+  anything done through your account is treated as done by you. Tell us at
+  {{ fill(legal.contact_email, "LEGAL_CONTACT_EMAIL") }} if you think someone
+  else has access.</p>
+<p>New accounts receive free starter credits. They are one allotment per
+  person: creating extra accounts to collect them again is abuse, and we may
+  close the accounts involved.</p>
+
+<h2>3. Credits, plans and billing</h2>
+<ul>
+  <li>Enhancing an image costs credits based on the size of the result — 1, 2,
+    4 or 8 credits, shown before you start.</li>
+  <li>Credits are deducted when a job starts. If the job fails, the credits are
+    returned to your balance automatically.</li>
+  <li>Paid plans are monthly subscriptions. Each renewal <strong>resets</strong>
+    your balance to that plan's allowance — unused credits do not carry over
+    and do not accumulate.</li>
+  <li>Changing plans mid-cycle is charged pro rata by our payment provider, and
+    the credits granted are prorated to match. The full allowance arrives at
+    your next normal renewal.</li>
+  <li>When a subscription ends, any remaining credits end with it.</li>
+  <li>Prices are the ones shown at checkout. We can change them for future
+    billing periods, never retroactively; you can cancel before a change takes
+    effect.</li>
+</ul>
+<p>Payments are handled by <strong>Paddle</strong>, which acts as the merchant
+  of record — Paddle is the seller for the transaction, issues your invoice and
+  collects any applicable tax. Paddle's buyer terms apply to the payment
+  itself. Refunds and cancellations are described in our
+  <a href="/refunds">refund policy</a>.</p>
+
+<h2>4. Your images</h2>
+<p>Your images stay yours. To run the service we need your permission to store
+  them, send them to the processors listed in our
+  <a href="/privacy">privacy policy</a>, and transform them — that permission
+  covers nothing else. It ends when you delete the image or your account.</p>
+<p><strong>We do not use your images to train AI models</strong>, and we do not
+  sell them or show them to anyone else.</p>
+<p>You confirm you have the right to upload what you upload, including the
+  rights of any person shown in it.</p>
+
+<h2>5. The results</h2>
+<p>As between you and us, the enhanced file is yours to use, including
+  commercially. The underlying models are open-source ones chosen so that
+  commercial use is permitted. We cannot promise that an AI-generated result is
+  free of every possible third-party claim, and how you use it is your
+  responsibility.</p>
+
+<h2>6. What you may not upload or do</h2>
+<ul>
+  <li>Sexual content involving minors, or intimate images of anyone shared
+    without their consent. Accounts are closed immediately and permanently.</li>
+  <li>Images you have no right to use, or content that is illegal where you
+    are.</li>
+  <li>Content used to impersonate a real person or to deceive — fake documents,
+    fabricated evidence.</li>
+  <li>Anything meant to break the service: probing for vulnerabilities,
+    automated scraping, evading rate limits or credit accounting, reselling
+    access as your own product.</li>
+</ul>
+
+<h2>7. Availability</h2>
+<p>We aim to keep the service running but do not guarantee uptime. There will
+  be maintenance and outages. The AI models we use can change or be replaced by
+  their providers, which can change results.</p>
+
+<h2>8. Suspension and closing accounts</h2>
+<p>You can delete your account at any time from the Account panel; that also
+  cancels any subscription right away. We can suspend or close an account that
+  breaches section 6, or that we reasonably believe is being used
+  fraudulently — where it's proportionate we'll warn you first. If we close
+  your account without cause, we refund the unused part of your current billing
+  period.</p>
+
+<h2>9. Liability</h2>
+<p>The service is provided as is, without warranties beyond those the law gives
+  you and does not let us exclude. To the extent the law allows, we are not
+  liable for lost profits, lost data or indirect losses, and our total
+  liability for any claim is limited to what you paid us in the twelve months
+  before it arose. Nothing here limits liability for fraud, death or personal
+  injury caused by negligence, or anything else that cannot lawfully be
+  limited. Keep your own copies of your original files.</p>
+
+<h2>10. Changes</h2>
+<p>We may update these terms. Material changes are announced by email to
+  account holders at least 14 days before they take effect. Continuing to use
+  the service after that means you accept them.</p>
+
+<h2>11. Law and disputes</h2>
+<p>These terms are governed by the laws of
+  {{ fill(legal.governing_law, "LEGAL_GOVERNING_LAW") }}, and its courts have
+  jurisdiction — without taking away the protection of mandatory consumer law
+  in your own country of residence.</p>
+
+<h2>12. Contact</h2>
+<p>{{ fill(legal.entity, "LEGAL_ENTITY") }},
+  {{ fill(legal.address, "LEGAL_ADDRESS") }} —
+  {{ fill(legal.contact_email, "LEGAL_CONTACT_EMAIL") }}</p>
+
+{% endblock %}

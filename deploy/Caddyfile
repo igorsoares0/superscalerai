@@ -1,0 +1,76 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	# The app enforces the real limit per file (MAX_UPLOAD_MB, 25) and its own
+	# middleware refuses oversized bodies before FastAPI parses them. This is
+	# one notch higher on purpose: the proxy protects the network, the app
+	# still gets to answer with its own readable 413.
+	request_body {
+		max_size 26MB
+	}
+
+	header {
+		# The app serves user-uploaded images from its own origin with a
+		# Content-Type guessed from the extension. Only JPEG/PNG/WEBP survive
+		# PIL validation, so stored XSS is unlikely — nosniff is the net under
+		# a polyglot file that passes as an image and reads as something else.
+		X-Content-Type-Options nosniff
+
+		# Clickjacking on the billing flow. Belt and braces: the CSP below
+		# says the same thing, but only X-Frame-Options is enforced in
+		# browsers that ignore an unenforced (report-only) policy.
+		X-Frame-Options DENY
+
+		Referrer-Policy strict-origin-when-cross-origin
+
+		# Paddle's checkout opens a popup for some payment methods, so plain
+		# `same-origin` would break paying customers.
+		Cross-Origin-Opener-Policy same-origin-allow-popups
+
+		# One year, and browsers stop accepting plain HTTP for this domain
+		# even if you later want it back. That is the point, but it IS a
+		# commitment: turn it on only once TLS is confirmed working.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+		# Enforced: every directive here is already true of the app today.
+		# form-action 'self' does not touch Paddle — the checkout iframe has
+		# its own origin and its own policy.
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+		# NOT enforced yet, on purpose. The page pulls Tailwind from jsDelivr,
+		# fonts from Google and Paddle.js from Paddle, and the Tailwind browser
+		# build injects <style> at runtime (hence 'unsafe-inline' for styles —
+		# unavoidable while the CDN build is in use). Whether it also needs
+		# 'unsafe-eval', and which paddle.com hosts the checkout really talks
+		# to, is not knowable from the source: run the sandbox checkout you
+		# already owe LAUNCH.md, read the violations in the browser console,
+		# then rename this header to Content-Security-Policy.
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdn.paddle.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.paddle.com; connect-src 'self' https://*.paddle.com; frame-src https://*.paddle.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+		# Don't advertise the proxy version to scanners.
+		-Server
+	}
+
+	reverse_proxy app:8000 {
+		# `caddy validate` calls the next line unnecessary. It is not, and the
+		# difference is the whole reason TRUST_PROXY_HEADERS can be turned on.
+		# Measured on caddy:2.10-alpine, forging `X-Forwarded-For: 1.2.3.4`:
+		#   no trusted_proxies       -> upstream sees 10.0.2.1  (forgery dropped)
+		#   trusted_proxies 0.0.0.0/0 -> upstream sees 1.2.3.4, 10.0.2.1
+		#   this line, either way    -> upstream sees 10.0.2.1
+		# Caddy's default is safe today, so the line is redundant TODAY. It
+		# stops being redundant the moment anyone adds a `trusted_proxies`
+		# block — the standard copy-paste for putting Cloudflare in front —
+		# because app/api/ratelimit.py reads the FIRST entry of the chain,
+		# which is exactly the part the client forged. That misconfiguration
+		# hands every attacker a fresh rate-limit bucket per request: login
+		# brute force and signup-bonus farming, both silent.
+		# `header_up` without a `+` replaces the value outright.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}

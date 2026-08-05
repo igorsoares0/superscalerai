@@ -1,0 +1,69 @@
+# Production stack for one Hetzner box (CX32, 8 GB — see LAUNCH.md).
+# `docker compose up -d` after filling .env: with ENVIRONMENT=production the
+# app refuses to start on any dev leftover instead of serving it silently
+# (app/core/config.py, config_problems).
+#
+# The database is Neon, so there is no db service here. Both volumes are
+# named, not bind mounts: nothing in this stack writes to the repo directory.
+
+services:
+  app:
+    build: .
+    image: superscaler:latest
+    restart: always
+    env_file: .env
+    environment:
+      # Explicit, even though these also belong in .env: they are the four
+      # settings whose dev default is actively wrong behind a proxy, and a
+      # forgotten line here is a silent failure, not a crash.
+      ENVIRONMENT: production
+      COOKIE_SECURE: "true"
+      # Safe ONLY because Caddy overwrites X-Forwarded-For (deploy/Caddyfile).
+      TRUST_PROXY_HEADERS: "true"
+      # Code default is 4. Two is what the memory limit below is sized for.
+      MAX_CONCURRENT_JOBS: "2"
+    expose:
+      - "8000"
+    # MAX_CONCURRENT_JOBS × the worst-case peak of a single job (~3 GB at
+    # max_image_px=3072, measured) is what has to fit here — not one job's
+    # peak. Under the limit the kernel kills uvicorn, not the job, so every
+    # other user's request dies too. Lower MAX_CONCURRENT_JOBS to 1 if you
+    # want 3g back for the other projects on this box.
+    # Swap is deliberately left at the default (container may swap up to the
+    # limit again): swapping a job is slow, being OOM-killed is downtime.
+    mem_limit: 6g
+    volumes:
+      # Only used when R2 is unconfigured — but an unconfigured R2 plus no
+      # volume means results vanish on redeploy with no error anywhere.
+      - storage:/srv/storage
+    logging:
+      driver: json-file
+      # journalctl is the log story (LAUNCH.md); this just stops a stuck
+      # error loop from filling the disk the other projects share.
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env, e.g. superscaler.ai}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env — Let's Encrypt expiry notices}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates live here; losing it re-issues them
+      - caddy_config:/config
+    depends_on:
+      app:
+        # Caddy starting first would answer with 502 while migrations run.
+        condition: service_healthy
+
+volumes:
+  storage:
+  caddy_data:
+  caddy_config:

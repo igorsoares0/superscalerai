@@ -26,6 +26,10 @@ def production(**overrides) -> Settings:
         r2_bucket="superscaler",
         resend_api_key="re_live",
         email_from="SuperScaler <no-reply@superscaler.example>",
+        legal_entity="SuperScaler Ltda",
+        legal_address="Rua Exemplo 1, Sao Paulo, Brazil",
+        legal_contact_email="support@superscaler.example",
+        legal_governing_law="Brazil",
     )
     return Settings(**{**base, **overrides})
 
@@ -58,6 +62,13 @@ def test_a_correct_production_config_passes():
         # anyone locked out stays locked out
         {"resend_api_key": ""},
         {"email_from": "SuperScaler <no-reply@example.com>"},
+        # the policy pages render a visible placeholder instead of these, and
+        # Paddle's approval reads those pages
+        {"legal_entity": ""},
+        {"legal_address": ""},
+        {"legal_contact_email": ""},
+        {"legal_governing_law": ""},
+        {"legal_entity": "   "},  # whitespace is not a company name
         {"cookie_secure": False},
         {"app_base_url": "http://localhost:8000"},
         {"app_base_url": "http://superscaler.example"},  # https is the point

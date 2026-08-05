@@ -1,0 +1,62 @@
+{% extends "legal.html" %}
+{% from "_legal_macros.html" import fill %}
+{% block title %}Refund Policy{% endblock %}
+{% block heading %}Refund Policy{% endblock %}
+{% block content %}
+
+<p>SuperScaler is sold by <strong>Paddle</strong>, our merchant of record.
+  Paddle takes the payment and issues the refund; we decide whether it's owed.
+  Ask either of us — writing to
+  {{ fill(legal.contact_email, "LEGAL_CONTACT_EMAIL") }} is the fastest route.</p>
+
+<h2>The {{ window_days }}-day refund</h2>
+<p>If the service isn't what you expected, ask within <strong>{{ window_days }}
+  days</strong> of a charge and we'll refund it in full — no explanation needed,
+  provided the plan's credits are largely unused. Each credit spent is real GPU
+  time that we have already paid for, so if most of the allowance is gone we
+  may refund the unused part instead of everything. We'd rather be generous
+  than argue about it.</p>
+
+<h2>If you're in the EU or the UK</h2>
+<p>You have a statutory right to withdraw within 14 days of purchase. Because
+  the service starts immediately, you accept when you subscribe that processing
+  begins at once; if you then withdraw, we may deduct the value of what you've
+  already used. This right sits alongside the policy above — whichever is
+  better for you applies.</p>
+
+<h2>Renewals</h2>
+<p>Subscriptions renew monthly until you cancel, and we email a receipt every
+  time. You can cancel from the billing panel at any moment:</p>
+<ul>
+  <li>Cancelling stops future charges. You keep your plan and your credits
+    until the end of the period you already paid for.</li>
+  <li>Any credits left at that point end with the subscription — they don't
+    carry over.</li>
+  <li>Changed your mind? While a cancellation is still scheduled, the same
+    button resumes the subscription and nothing is charged.</li>
+</ul>
+<p>A renewal you forgot about is worth an email: if you cancel right after one
+  and haven't used the new period's credits, we'll refund it.</p>
+
+<h2>Failed enhancements</h2>
+<p>If a job fails, its credits go straight back to your balance — automatically,
+  no request needed. That's a credit refund, not a money refund: the credits are
+  yours to spend on another image.</p>
+<p>A result you simply don't like is not a failure. Generative upscaling is not
+  deterministic, and some photos come out better than others — that's why new
+  accounts get free credits to try before paying.</p>
+
+<h2>What isn't refunded</h2>
+<ul>
+  <li>Billing periods that already ended, beyond the {{ window_days }}-day
+    window.</li>
+  <li>Accounts closed for breaking the <a href="/terms">terms</a>.</li>
+</ul>
+
+<h2>Before you file a chargeback</h2>
+<p>Please write to us first. A chargeback costs us a fee on top of the refund
+  and freezes the account while the bank decides, so it's slower for you than
+  asking. We answer refund requests within 5 business days; Paddle then takes
+  5–10 days to put the money back on your card.</p>
+
+{% endblock %}

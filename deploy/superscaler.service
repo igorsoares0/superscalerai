@@ -1,0 +1,25 @@
+# /etc/systemd/system/superscaler.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now superscaler
+#
+# Compose already restarts individual containers; this unit is what brings the
+# stack back after a reboot of the box.
+
+[Unit]
+Description=SuperScaler (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/superscaler
+# Rebuilds only when the code changed; a no-op build is a couple of seconds.
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+# In-flight jobs die on stop and are refunded on the next boot (app/main.py).
+# Deploying at a quiet hour is still the plan until graceful drain exists.
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 # Checklist de lançamento
 
 Levantado em 2026-07-27, incluindo uma review de segurança e uma review do fluxo
-de pagamentos. Atualizado em 2026-08-01. Estado do produto: **179 testes
+de pagamentos. Atualizado em 2026-08-05. Estado do produto: **203 testes
 passando**, fluxo completo do SPEC implementado.
 
 Marcadores: `[código]` = programar de verdade · `[seg]` = achado da review de
@@ -37,10 +37,25 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 
 - [ ] Registrar domínio + apontar DNS
 - [ ] Páginas de termos, privacidade e política de reembolso
-      (a Paddle costuma exigir as três na revisão — pré-requisito do item abaixo)
-      A privacidade pode prometer exclusão self-service: o botão existe desde
-      2026-08-01 (modal Account). Descreva o que sobrevive — registros de
-      pagamento são retidos por obrigação fiscal.
+      **RASCUNHO FEITO 2026-08-05** — falta o que só você pode dar: revisar o
+      texto e preencher os `LEGAL_*` no `.env`.
+      `/terms`, `/privacy`, `/refunds` (templates próprios, sem `base.html`:
+      o `app.js` chuta visitante deslogado pro `/login`, e o revisor da Paddle
+      é exatamente isso). Linkadas do `/login` e do modal de checkout.
+      O conteúdo saiu do código, não de template genérico: cota que reseta sem
+      acumular, saldo que morre no cancelamento, custo 1/2/4/8 por resolução de
+      saída, refund automático de job que falha, proração no upgrade, Paddle
+      como merchant of record, e a lista real de sub-processadores (Replicate
+      — pra onde a foto do usuário VAI —, R2, Neon, Resend, Paddle, Hetzner).
+      A privacidade já descreve a exclusão self-service e o que sobrevive.
+      Identidade jurídica virou config (`LEGAL_ENTITY`, `LEGAL_ADDRESS`,
+      `LEGAL_CONTACT_EMAIL`, `LEGAL_GOVERNING_LAW`): vazio aparece como
+      placeholder vermelho na página e é **fatal** no boot em produção.
+      Decisões suas que estão como default no rascunho: janela de reembolso
+      (`REFUND_WINDOW_DAYS=14`, mínimo que a lei da UE impõe de qualquer jeito),
+      teto de responsabilidade em 12 meses de pagamento, idade mínima 16.
+      **Não é parecer jurídico** — é um rascunho consistente com o que o código
+      faz, pra você revisar (ou passar num advogado) antes de publicar.
 - [ ] Submeter a conta Paddle para aprovação de produção
 
 ## Bloco 2 — enquanto a Paddle revisa
@@ -68,13 +83,30 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 - [ ] **Rescale CX22 → CX32** (desligar o servidor; escolher a opção que NÃO
       cresce o disco, senão o downgrade fica bloqueado pra sempre). Derruba os
       outros projetos por alguns minutos — agendar. Snapshot antes.
-- [ ] Dockerfile + docker-compose (com `mem_limit` e `restart: always`)
-- [ ] Caddy: TLS automático + **sobrescrever** `X-Forwarded-For`
-      Atenção: `app/api/ratelimit.py:16` lê o PRIMEIRO IP da cadeia, e nginx/Caddy
-      por padrão *acrescentam* ao header que o cliente mandou. Ligar
-      `trust_proxy_headers=True` sem sobrescrever é pior que deixar desligado —
-      qualquer um forja o header e fura todos os limites por IP.
-      No nginx: `proxy_set_header X-Forwarded-For $remote_addr;`
+- [x] Dockerfile + docker-compose (com `mem_limit` e `restart: always`)
+      FEITO 2026-08-05. `Dockerfile` (multi-stage com uv, venv do lock, usuário
+      não-root, HEALTHCHECK no `/health`), `.dockerignore`, `docker-compose.yml`
+      (app + Caddy, volumes nomeados, `depends_on: service_healthy`),
+      `deploy/README.md` com a ordem de operações. **Imagem construída e
+      testada**: sobe, migra, serve `/`, `/health` e `/static`, e com
+      `ENVIRONMENT=production` recusa subir listando os 11 problemas.
+      `mem_limit: 6g` porque o que tem que caber é `max_concurrent_jobs` × pico
+      (~3 GB), não o pico de um job — é essa multiplicação que amarra o
+      `max_concurrent_jobs=2` ao item do bloco 4.
+      Atenção: `/srv` é do root dentro do container, só `/srv/storage` é
+      gravável pelo processo. Em produção o storage é R2, então isso só
+      importa se você voltar pro disco local.
+- [x] Caddy: TLS automático + **sobrescrever** `X-Forwarded-For`
+      FEITO 2026-08-05: `deploy/Caddyfile` (validado com `caddy validate`).
+      Correção de uma premissa antiga desta lista: **o Caddy ≥2.7 não acrescenta
+      ao header do cliente** — ele descarta o `X-Forwarded-For` de origem não
+      confiável. Medido no `caddy:2.10-alpine`, forjando `1.2.3.4`: default
+      entrega `10.0.2.1` (forja some), com `trusted_proxies 0.0.0.0/0` entrega
+      `1.2.3.4, 10.0.2.1` (forja passa, e `app/api/ratelimit.py:16` lê o
+      PRIMEIRO). O `header_up X-Forwarded-For {remote_host}` está lá assim
+      mesmo: é redundante hoje e deixa de ser no dia em que alguém puser
+      `trusted_proxies` pra botar Cloudflare na frente. Quem usa nginx é que
+      precisa mesmo: `proxy_set_header X-Forwarded-For $remote_addr;`
 - [ ] **`ENVIRONMENT=production` no .env** — sem isso a validação de boot
       (bloco Código) fica MUDA e todo o resto desta lista volta a ser silencioso.
       Ponha primeiro: com ela ligada o app recusa subir e diz o que falta.
@@ -84,7 +116,9 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
       (`run_migrations()` roda no import em `app/main.py:22` e correria com N workers)
 - [ ] `max_concurrent_jobs=2` (default do código é 4 — explicitar no .env)
 - [ ] Hetzner Cloud Firewall: 80/443 abertos, SSH restrito ao seu IP
-- [ ] systemd para o compose
+- [x] systemd para o compose
+      FEITO 2026-08-05: `deploy/superscaler.service` (oneshot + RemainAfterExit,
+      `docker compose up -d --build`). Só instalar e habilitar no servidor.
 - [ ] Swap 4–8 GB (rede de segurança; menos urgente com 8 GB)
 
 ### Código
@@ -289,12 +323,25 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
       Replicate, corpo de erro da API. Detalhe pro Sentry, genérico pro usuário.
       *Gatilho: assim que o Sentry estiver de pé.*
 
-- [ ] `[seg]` **Cabeçalhos de segurança** — sem CSP, `X-Content-Type-Options:
-      nosniff`, `frame-ancestors`, HSTS. Você serve imagem de usuário na mesma
-      origem com Content-Type adivinhado por extensão. Os formatos são validados
+- [x] `[seg]` **Cabeçalhos de segurança** — FEITO 2026-08-05 no `deploy/Caddyfile`,
+      junto com o Caddy, como previsto. Você serve imagem de usuário na mesma
+      origem com Content-Type adivinhado por extensão; os formatos são validados
       pelo PIL (só JPEG/PNG/WEBP, sem SVG), então XSS armazenado é improvável —
-      mas `nosniff` é a rede contra polyglot, e sem `frame-ancestors` o fluxo de
-      billing aceita clickjacking. *Gatilho: vai junto com o Caddy, é config.*
+      `nosniff` é a rede contra polyglot, e `frame-ancestors` fecha o
+      clickjacking no fluxo de billing.
+      **Enforcing:** `nosniff`, `X-Frame-Options: DENY`, HSTS 1 ano,
+      `Referrer-Policy`, COOP `same-origin-allow-popups` (o `same-origin` puro
+      quebra o popup de pagamento da Paddle) e um CSP curto com
+      `frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+      object-src 'none'` — os quatro já são verdade hoje.
+      **Report-Only:** o CSP com allowlist de script/style/connect/frame.
+      Motivo de não estar enforcing: a página puxa Tailwind do jsDelivr, fontes
+      do Google e Paddle.js, e nem "o build do Tailwind precisa de
+      `unsafe-eval`?" nem "quais hosts `*.paddle.com` o checkout realmente
+      chama?" se responde lendo o código. O checkout de sandbox que você já
+      deve rodar responde os dois no console — aí é só renomear o header.
+      Também no Caddy: `request_body max_size 26MB` (o teto exato continua no
+      middleware do app, isso protege a rede antes).
 
 - [ ] `[código]` `[seg]` **Sem cota de armazenamento por conta**
       20 uploads/min × 25 MB = ~30 GB/hora de R2 por conta grátis. Isso é dinheiro

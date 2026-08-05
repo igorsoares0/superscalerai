@@ -65,3 +65,45 @@ def login(request: Request):
 def reset(request: Request):
     """Landing page for the password-reset email link (?token=...)."""
     return templates.TemplateResponse(request, "reset.html", {"page": "reset"})
+
+
+# Bump when the wording of any of the three pages changes: it is what a
+# customer (and Paddle's reviewer) reads as the version they agreed to.
+LEGAL_UPDATED = "5 August 2026"
+
+
+def _legal_page(request: Request, template: str) -> HTMLResponse:
+    """The three public policy pages. Paddle requires all of them to be
+    reachable without an account during approval, which is why they render
+    from legal.html instead of base.html — base.html loads app.js, which
+    bounces anyone without a session to /login."""
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "page": "legal",
+            "updated": LEGAL_UPDATED,
+            "legal": {
+                "entity": settings.legal_entity,
+                "address": settings.legal_address,
+                "contact_email": settings.legal_contact_email,
+                "governing_law": settings.legal_governing_law,
+            },
+            "window_days": settings.refund_window_days,
+        },
+    )
+
+
+@router.get("/terms", response_class=HTMLResponse)
+def terms(request: Request):
+    return _legal_page(request, "terms.html")
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request):
+    return _legal_page(request, "privacy.html")
+
+
+@router.get("/refunds", response_class=HTMLResponse)
+def refunds(request: Request):
+    return _legal_page(request, "refunds.html")

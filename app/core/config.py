@@ -62,6 +62,18 @@ class Settings(BaseSettings):
     email_from: str = "SuperScaler <no-reply@example.com>"
     app_base_url: str = "http://localhost:8000"  # base for links inside emails
     password_reset_ttl_minutes: int = 30
+    # Who is selling, and under whose law. Rendered on /terms, /privacy and
+    # /refunds — pages Paddle reads during approval and customers read when
+    # they want their money back. Empty shows a loud placeholder in the page
+    # and is fatal in production: publishing a policy that says "[set this]"
+    # is worse than publishing none.
+    legal_entity: str = ""  # registered name, e.g. "Jane Doe ME" or a company
+    legal_address: str = ""  # postal address, one line
+    legal_contact_email: str = ""  # a mailbox a human reads, e.g. support@...
+    legal_governing_law: str = ""  # e.g. "Brazil" — which courts and law apply
+    # Buyers in the EU/UK have a statutory 14-day withdrawal right, so a
+    # shorter window than this would be unenforceable there anyway.
+    refund_window_days: int = 14
 
 
 settings = Settings()
@@ -122,6 +134,17 @@ def config_problems(s: Settings) -> tuple[list[str], list[str]]:
             f"EMAIL_FROM is still {s.email_from!r} — Resend refuses to send from "
             "a domain that isn't verified"
         )
+    # The legal pages render a visible placeholder wherever one of these is
+    # blank. Serving that to a customer (or to Paddle's reviewer) is a worse
+    # outcome than refusing to boot.
+    for name, value in (
+        ("LEGAL_ENTITY", s.legal_entity),
+        ("LEGAL_ADDRESS", s.legal_address),
+        ("LEGAL_CONTACT_EMAIL", s.legal_contact_email),
+        ("LEGAL_GOVERNING_LAW", s.legal_governing_law),
+    ):
+        if not value.strip():
+            fatal.append(f"{name} is empty — /terms, /privacy and /refunds would show a placeholder")
 
     warnings = []
     if not s.rate_limit_enabled:

@@ -1,0 +1,100 @@
+{% extends "legal.html" %}
+{% from "_legal_macros.html" import fill %}
+{% block title %}Privacy Policy{% endblock %}
+{% block heading %}Privacy Policy{% endblock %}
+{% block content %}
+
+<p>The controller of your personal data is
+  <strong>{{ fill(legal.entity, "LEGAL_ENTITY") }}</strong>
+  ({{ fill(legal.address, "LEGAL_ADDRESS") }}). Questions, or any request under
+  this policy: {{ fill(legal.contact_email, "LEGAL_CONTACT_EMAIL") }}.</p>
+
+<h2>What we collect</h2>
+<table>
+  <tr><th>Data</th><th>Where it comes from</th></tr>
+  <tr><td>Email address</td><td>You, at sign-up. It identifies your account and is where password-reset links go.</td></tr>
+  <tr><td>Password</td><td>You. Stored only as an Argon2 hash — we cannot read it or recover it for you.</td></tr>
+  <tr><td>Images you upload, the enhanced results, and thumbnails</td><td>You. Kept so you can find them in your library.</td></tr>
+  <tr><td>Job details — settings you chose, the caption the model generated, size, status, credit cost</td><td>Generated while processing your image.</td></tr>
+  <tr><td>Session identifiers</td><td>Created at login. Only a hash of the token is stored.</td></tr>
+  <tr><td>IP address</td><td>Your connection. Used to rate-limit sign-ups, logins and uploads. Held in memory only, for minutes to an hour, and never written to the database.</td></tr>
+  <tr><td>Subscription and payment records — plan, transaction id, amount, currency, dates</td><td>Paddle, after a payment. <strong>We never see or store your card details.</strong></td></tr>
+</table>
+<p>There is no analytics, advertising or tracking on this site. The only cookie
+  is the one that keeps you signed in: strictly necessary, HTTP-only, and not
+  sent on cross-site requests.</p>
+
+<h2>Why we're allowed to use it</h2>
+<ul>
+  <li><strong>To provide the service you asked for</strong> (performance of our
+    contract): your account, your images, processing jobs, credits, billing.</li>
+  <li><strong>To keep the service standing up</strong> (legitimate interest):
+    rate limits and abuse prevention, error logs.</li>
+  <li><strong>Because the law requires it</strong>: payment and tax records.</li>
+</ul>
+
+<h2>Who else processes your data</h2>
+<p>These providers act on our instructions, each for one job:</p>
+<table>
+  <tr><th>Provider</th><th>What it does</th><th>Where</th></tr>
+  <tr><td>Replicate</td><td>Runs the AI models. <strong>Your image is sent there to be processed</strong> and the result comes back to us.</td><td>United States</td></tr>
+  <tr><td>Cloudflare R2</td><td>Stores your images and results.</td><td>Global / EU</td></tr>
+  <tr><td>Neon</td><td>Hosts the database: account, jobs, credits, payment records.</td><td>United States</td></tr>
+  <tr><td>Resend</td><td>Sends the password-reset email.</td><td>United States</td></tr>
+  <tr><td>Paddle</td><td>Merchant of record: takes payment, issues invoices, handles tax. Paddle is a controller in its own right for the payment — see Paddle's own privacy notice.</td><td>United Kingdom / EU</td></tr>
+  <tr><td>Hetzner</td><td>Hosts the application server.</td><td>Germany</td></tr>
+</table>
+<p>Some of these are outside the EEA, so your data is transferred there under
+  the European Commission's standard contractual clauses or an equivalent
+  safeguard.</p>
+<p><strong>We do not use your images to train AI models</strong>, and we do not
+  sell your data or share it for advertising.</p>
+
+<h2>How long we keep it</h2>
+<ul>
+  <li><strong>Images and results:</strong> until you delete them, or until you
+    delete your account. Deleting an image removes the files from storage.</li>
+  <li><strong>Account data:</strong> until you delete your account.</li>
+  <li><strong>Sessions:</strong> expire automatically; deleting your account or
+    resetting your password revokes them all at once.</li>
+  <li><strong>Payment records:</strong> kept for as long as tax and accounting
+    law requires, even after you delete your account. This is the one thing
+    deletion cannot remove.</li>
+</ul>
+
+<h2>Deleting your account</h2>
+<p>You can do it yourself: <em>Account</em> in the sidebar, then
+  <em>Delete my account</em>, confirmed with your password. What happens:</p>
+<ul>
+  <li>Any active subscription is cancelled immediately, before anything else —
+    a closed account is never left paying.</li>
+  <li>Your images, results and thumbnails are deleted from storage, along with
+    your jobs, sessions and any password-reset links.</li>
+  <li>Your email address and password are erased and your balance is zeroed.</li>
+  <li>The payment records that tax law obliges us to keep survive, no longer
+    linked to a usable account. Your email address is freed, so you can sign up
+    again later if you want.</li>
+</ul>
+
+<h2>Your rights</h2>
+<p>You can ask for a copy of your data, correct it, have it deleted, take it
+  elsewhere, or object to processing based on our legitimate interest. Write to
+  {{ fill(legal.contact_email, "LEGAL_CONTACT_EMAIL") }} and we'll answer within
+  30 days. If you think we've handled your data badly you can complain to your
+  local data protection authority.</p>
+
+<h2>Security</h2>
+<p>Passwords are hashed with Argon2, session and reset tokens are stored only as
+  hashes, all traffic runs over HTTPS, and every image and download is checked
+  against the account that owns it. No system is perfect: if a breach affects
+  you, we'll tell you and the relevant authority as the law requires.</p>
+
+<h2>Children</h2>
+<p>SuperScaler is not for people under 16. We don't knowingly keep accounts for
+  them — tell us if one exists and we'll remove it.</p>
+
+<h2>Changes</h2>
+<p>If we change this policy in a way that matters, account holders get an email
+  before it takes effect. The date at the top always shows the current version.</p>
+
+{% endblock %}

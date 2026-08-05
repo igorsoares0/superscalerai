@@ -1,0 +1,60 @@
+{# Standalone shell for the public legal pages. Deliberately NOT extending
+   base.html: that one loads app.js, which calls /auth/me and redirects to
+   /login on 401 — and these three pages have to open for a logged-out
+   stranger (Paddle's reviewer is exactly that). No sidebar, no Paddle.js,
+   no billing modal: nothing here needs a session. #}
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SuperScaler — {% block title %}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"
+          integrity="sha384-XXN6/S6yXj8EpXnBTw3JGR9ZM+hixGxFCLYn0FHtg9cWh0ziKmAgTPEhecbCDOmj"
+          crossorigin="anonymous"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-ink:    #0a0a0c;
+      --color-panel:  #131316;
+      --color-line:   rgba(255,255,255,0.07);
+      --color-body:   #f0f0f3;
+      --color-mute:   #8d8d97;
+      --color-accent: #4b72ff;
+      --color-err:    #ff6161;
+      --font-display: "Space Grotesk", sans-serif;
+      --font-sans:    "Inter", system-ui, sans-serif;
+    }
+    .prose h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; margin-top: 2rem; margin-bottom: .5rem; }
+    .prose p, .prose li { color: var(--color-mute); line-height: 1.7; margin-bottom: .75rem; }
+    .prose strong { color: var(--color-body); font-weight: 600; }
+    .prose ul { list-style: disc; padding-left: 1.25rem; margin-bottom: .75rem; }
+    .prose a { color: var(--color-accent); }
+    .prose table { width: 100%; font-size: .875rem; margin-bottom: .75rem; }
+    .prose td, .prose th { border-bottom: 1px solid var(--color-line); padding: .5rem .5rem .5rem 0; text-align: left; vertical-align: top; color: var(--color-mute); }
+    .prose th { color: var(--color-body); font-weight: 600; }
+  </style>
+</head>
+<body class="h-full bg-ink font-sans text-body antialiased">
+  <div class="mx-auto max-w-2xl px-6 py-12">
+    <a href="/" class="mb-10 inline-flex items-center gap-3">
+      <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 font-display text-lg font-bold text-accent">S</span>
+      <span class="font-display text-lg font-bold tracking-tight">SuperScaler</span>
+    </a>
+
+    <h1 class="font-display text-2xl font-bold tracking-tight">{% block heading %}{% endblock %}</h1>
+    <p class="mt-1 text-sm text-mute">Last updated {{ updated }}</p>
+
+    <div class="prose mt-8">{% block content %}{% endblock %}</div>
+
+    <footer class="mt-14 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-mute">
+      <a href="/terms" class="hover:text-body">Terms</a>
+      <a href="/privacy" class="hover:text-body">Privacy</a>
+      <a href="/refunds" class="hover:text-body">Refunds</a>
+      <a href="/" class="hover:text-body">Back to the app</a>
+    </footer>
+  </div>
+</body>
+</html>
