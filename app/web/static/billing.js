@@ -63,6 +63,18 @@
     plansBox.innerHTML = "";
     for (const plan of catalog.plans) plansBox.appendChild(planButton(plan));
     renderCancel();
+    if (!catalog.email_verified) lockPlansUntilConfirmed();
+  }
+
+  /* Buying while unconfirmed leaves a charged card on an account that can't
+     upload. Canceling stays clickable on purpose: whoever already has a plan
+     must always be able to stop the charges. */
+  function lockPlansUntilConfirmed() {
+    for (const btn of plansBox.querySelectorAll("button")) {
+      btn.disabled = true;
+      btn.classList.add("opacity-60");
+    }
+    setStatus("Confirm your email before subscribing — the link is in your inbox.", "err");
   }
 
   function renderCancel() {
@@ -232,6 +244,7 @@
   }
 
   function checkout(plan) {
+    if (!catalog.email_verified) return lockPlansUntilConfirmed();
     if (!initPaddle()) return setStatus("Payment script is still loading — try again in a second.", "err");
     if (!catalog.client_token) return setStatus("Payments aren't configured on this server.", "err");
     Paddle.Checkout.open({

@@ -1,7 +1,7 @@
 # Checklist de lançamento
 
 Levantado em 2026-07-27, incluindo uma review de segurança e uma review do fluxo
-de pagamentos. Atualizado em 2026-08-05. Estado do produto: **203 testes
+de pagamentos. Atualizado em 2026-08-18. Estado do produto: **245 testes
 passando**, fluxo completo do SPEC implementado.
 
 Marcadores: `[código]` = programar de verdade · `[seg]` = achado da review de
@@ -16,6 +16,35 @@ pagamentos tinha dois furos que sangravam dinheiro**, ambos fechados em
 (domínio, Paddle em produção, servidor) mais UMA validação: exercitar upgrade e
 renovação de verdade no sandbox — ver a ressalva nos dois itens de pagamento
 abaixo, os payloads reais nunca foram observados.
+
+**Atualização 2026-08-05 (commit `f1f5848`, "security hardening").** Quatro
+itens dos blocos 3-4 foram fechados ANTES do gatilho, porque o mesmo mergulho no
+código que fechou um encontrou os outros: verificação de email, starvation do
+threadpool, `error_message` cru e o path traversal do `LocalStorage`. Junto
+vieram quatro coisas que não estavam nesta lista (tetos de fila, `SecretStr` nos
+segredos, download em streaming, upload malformado virando 500) — todas
+registradas como `[x]` no bloco 3, para a lista não continuar mentindo sobre o
+que existe. **Nada disso mudou o que falta pra lançar: segue sendo ops.**
+
+**Atualização 2026-08-18 — a confirmação de email virou pré-requisito.** Era um
+gate mole (conta não confirmada usava tudo, só não tinha crédito); agora é
+duro, decidido pelo usuário: `/images/upload` recusa endereço não confirmado
+(403) e `/billing/plans` não entrega o `paddle_client_token`, que é o que deixa
+o `Paddle.Initialize` rodar — o checkout é aberto pelo Paddle.js no navegador,
+então negar o token É a barreira, não há rota pra recusar. `/billing/change`
+recusa com 403 junto; `/billing/cancel` e `/billing/resume` continuam abertos
+de propósito, porque trancar alguém numa assinatura que ele não consegue
+cancelar é pior que o problema. O upload também passou a exigir saldo que cubra
+o custo daquela imagem (`job_cost` a 2x já é o preço final), em vez de guardar
+bytes que nenhum job vai ler. No front, o dashboard deixou de aparecer:
+`initShell` manda conta não confirmada pra `/verify`, que virou sala de espera
+(reenviar o link, trocar de conta) além de página do token — a faixa amarela no
+`base.html` saiu junto, não teria mais leitor. **Isso é apresentação, não
+barreira:** redirect é sugestão pro navegador e nada pro `curl`, as barreiras
+de verdade são as da API acima. Testes: `tests/test_upload_gating.py` (6), mais
+4 em `tests/test_billing.py` e 2 em `tests/test_web.py`. **Consequência pro lançamento: o item do Resend
+abaixo deixou de ser sobre recuperação de senha e virou o gargalo de todo o
+funil — está reescrito.**
 
 Servidor: Hetzner. **Mínimo 8 GB de RAM** — o `post_processor` consome ~100 MB
 por megapixel de saída (medido), e o pior caso permitido hoje (`max_image_px=3072`,
@@ -69,11 +98,22 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 ### Contas
 - [ ] Verificar domínio no Resend (SPF/DKIM/DMARC) e ajustar `email_from`
       Hoje é `no-reply@example.com`. Sem domínio verificado o Resend recusa o
-      envio, e `app/services/email.py:38` engole a falha em log porque roda em
+      envio, e `app/services/email.py:39-40` engole a falha em log porque roda em
       BackgroundTask — ou seja, **recuperação de senha morre em silêncio**.
       Desde 2026-08-01 os dois são **fatais** no boot, não avisos: o modo de
       falha (todo mundo que esquece a senha fica trancado, e você descobre por
       ticket) é caro demais para subir com ele.
+      **Subiu de importância em 2026-08-05:** com a verificação de email, o
+      bônus de 8 créditos só é pago na confirmação. Email quebrado agora não
+      tranca só quem esqueceu a senha — deixa **todo cadastro novo com saldo
+      zero**, no dia do lançamento, sem erro em lugar nenhum.
+      **Virou o item mais crítico do bloco em 2026-08-18:** com o gate duro,
+      confirmar o endereço é pré-requisito pra upload E pra pagamento. Resend
+      quebrado agora não é um funil pior — é **funil zero**: ninguém sobe uma
+      imagem, ninguém assina, e o app não erra em lugar nenhum porque o envio
+      falha dentro de uma BackgroundTask. Some com o produto inteiro atrás de
+      um link que nunca chega. É a primeira coisa a testar de ponta a ponta no
+      domínio novo (cadastrar, receber, clicar), antes de qualquer divulgação.
 - [ ] Trocar os price IDs de sandbox pelos de produção
       `PADDLE_PRICE_BASIC` / `PADDLE_PRICE_PRO` no .env (antes eram hardcoded
       em `app/services/billing.py`). Também **fatal** desde 2026-08-01: os ids
@@ -130,12 +170,18 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
       Ponha primeiro: com ela ligada o app recusa subir e diz o que falta.
 - [ ] `trust_proxy_headers=True`
 - [ ] `cookie_secure=True`
-- [ ] `workers=1` explícito no compose
-      (`run_migrations()` roda no import em `app/main.py:22` e correria com N workers)
+- [x] `workers=1` explícito
+      FEITO: está no `CMD` do `Dockerfile` (`uvicorn ... --workers 1`), não no
+      compose — o compose não sobrescreve `command`, então vale de qualquer
+      jeito, e no Dockerfile vale também pra quem rodar a imagem na mão.
+      (`run_migrations()` roda no import em `app/main.py:22` e correria com N workers.)
 - [x] `max_concurrent_jobs` — **1** (não 2), já no `docker-compose.yml` junto com
-      `cookie_secure`, `trust_proxy_headers` e `workers=1`. Caixa compartilhada:
-      ver o item do servidor acima. Volta a 2 quando o pico de memória do
-      pós-processamento cair (bloco 4).
+      `cookie_secure` e `trust_proxy_headers`. Caixa compartilhada: ver o item do
+      servidor acima. Volta a 2 quando o pico de memória do pós-processamento
+      cair (bloco 4).
+      Desde 2026-08-05 esse número é o `max_workers` do pool de jobs
+      (`app/jobs/queue.py`), não mais um semáforo dentro do worker — a diferença
+      importa e está no item do threadpool, no bloco 3.
 - [ ] Hetzner Cloud Firewall: 80/443 abertos, SSH restrito ao seu IP
 - [x] systemd para o compose
       FEITO 2026-08-05: `deploy/superscaler.service` (oneshot + RemainAfterExit,
@@ -278,10 +324,38 @@ dias. Tudo no bloco 2 cabe dentro dessa espera.
 
 Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
 
-- [ ] `[código]` **Verificação de email no cadastro**
-      Hoje `register` credita os 8 créditos sem confirmar nada = dinheiro de GPU
-      por email descartável. *Gatilho: primeiro sinal de abuso, ou passar de ~50
-      cadastros/dia.* Até lá dá pra olhar a tabela de usuários na mão.
+- [x] `[código]` **Verificação de email no cadastro**
+      FEITO 2026-08-05 (antecipado: o gatilho era abuso, mas o item de baixo
+      obrigou a mexer no mesmo caminho, e o custo caiu junto).
+      Era: `register` creditava os 8 créditos sem confirmar nada = dinheiro de
+      GPU por email descartável.
+      Correção, e o detalhe que importa: **o cadastro não mudou de forma, o
+      BÔNUS é que mudou de hora**. `register` cria o usuário com `credits=0`,
+      loga a pessoa normalmente e manda o link; `service.grant_signup_bonus`
+      lança os 8 créditos no ledger quando o endereço é confirmado, uma vez só
+      (`if user.email_verified_at is not None: return`). Conta não confirmada
+      navegava, subia imagem e até assinava — só não ganhava crédito de graça,
+      para evitar o modo de falha clássico ("confirme para usar" + email que
+      não chega = funil zerado no dia do lançamento).
+      **REVISTO EM 2026-08-18 (ver a atualização no topo):** o gate ficou duro
+      a pedido do usuário. Upload e pagamento agora exigem confirmação, e o
+      dashboard nem carrega — `/verify` virou sala de espera. Pela API sobrou
+      só cancelar assinatura. O modo de falha que este parágrafo evitava
+      passou a ser aceito conscientemente — e é exatamente por isso que o item
+      do Resend, no bloco 2, virou o mais crítico da lista.
+      `POST /auth/verify` consome o link e **também loga** (o link é aberto num
+      navegador diferente do que cadastrou, rotineiramente);
+      `POST /auth/resend-verification` reemite, com limite próprio
+      (`verify_resend_rate_limit`, 3/h por usuário — cada hit é email real).
+      TTL de 24h (`email_verification_ttl_hours`): link de confirmação espera
+      alguém abrir a caixa de entrada, diferente do reset que a pessoa pediu há
+      um minuto. Expirar não é beco sem saída, o reenvio existe.
+      Migração `87f3143089b7`; página `/verify` (`verify.html`) + faixa no
+      `base.html` pra conta não confirmada.
+      Testes: `tests/test_email_verification.py` (11).
+      **Consequência pro `.env`:** `RESEND_API_KEY` e `EMAIL_FROM` ficaram ainda
+      mais fatais — agora seguram o bônus de todo cadastro novo, não só a
+      recuperação de senha. A mensagem do `config_problems` já diz isso.
 - [ ] `[código]` **Tratar `past_due` da Paddle**
       O webhook só trata `transaction.completed` e `subscription.canceled`.
       Assinatura inadimplente segue com plano ativo até a Paddle cancelar sozinha.
@@ -290,11 +364,29 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
       5xx transiente da Replicate mata o job. O crédito é estornado, então o
       prejuízo é de experiência, não de dinheiro. *Gatilho: reclamação ou taxa de
       falha visível no Sentry.*
-- [ ] `[código]` **Threadpool: jobs em espera seguram threads do anyio**
-      (`app/workers/enhance.py`) — o semáforo bloqueia dentro da thread, e o pool
-      (limite 40) é o mesmo que serve as rotas síncronas. Fila cheia trava o site
-      inteiro, sem erro e sem log. *Gatilho: 40 jobs simultâneos na fila — não
-      acontece nos primeiros clientes.*
+- [x] `[código]` **Threadpool: jobs em espera seguram threads do anyio**
+      FEITO 2026-08-05 (antecipado: o gatilho era "40 jobs simultâneos", mas o
+      caminho até lá custava 1 crédito por job e nada limitava o `POST /jobs` —
+      barato demais pra deixar de pé).
+      Era: `BackgroundTasks` entrega a função síncrona ao threadpool do
+      Starlette — o MESMO pool de 40 slots (CapacityLimiter do anyio) que serve
+      toda rota `def` do app. Um job segura sua thread pelos 30-90s inteiros,
+      então 40 jobs em voo deixavam zero threads pro HTTP: login, download,
+      webhook da Paddle e até `/health` paravam de responder até a fila drenar.
+      Correção, em `app/jobs/queue.py`: pool próprio
+      (`ThreadPoolExecutor(max_workers=max_concurrent_jobs)`). A fila espera em
+      threads dela, e o caminho de request nunca é faminto. O semáforo dentro do
+      worker SAIU — era justamente ele que fazia job em espera segurar thread
+      alheia; o teto de concorrência agora é o `max_workers` do pool.
+      Junto vieram os dois tetos que faltavam (não estavam nesta lista):
+      `max_queued_jobs` (20, global → **503**, "todo mundo está esperando") e
+      `max_queued_jobs_per_user` (3 → **429**, "você já tem vários rodando"),
+      porque só o teto global é monopolizável por uma conta. `queue.reserve()` é
+      chamado ANTES da linha do job e do débito — job que a fila recusaria não
+      pode custar crédito de ninguém —, e `release()` devolve a vaga em qualquer
+      saída, inclusive exceção. Nada disso sobrevive a restart, e não precisa:
+      `app/main.py` falha e estorna todo job "queued"/"running" no boot.
+      Testes: `tests/test_worker_concurrency.py` (10).
 - [ ] Drain gracioso no deploy (parar de aceitar jobs → esperar slots → reiniciar)
       Sem isso todo deploy mata os jobs em voo. O `main.py:22-35` estorna os
       créditos no boot seguinte, mas o usuário perde o resultado.
@@ -338,11 +430,16 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
       plano atual vira **"Keep {plano}"** quando há downgrade agendado.
       Testes: 6 na seção "changing your mind" de `tests/test_billing.py`.
 
-- [ ] `[código]` `[seg]` **`error_message` cru devolvido ao usuário**
-      `app/api/jobs.py:79` ← `app/workers/enhance.py:62`. `str(exc)` de qualquer
-      exceção do pipeline vai pro cliente: caminhos internos, URLs de predição da
-      Replicate, corpo de erro da API. Detalhe pro Sentry, genérico pro usuário.
-      *Gatilho: assim que o Sentry estiver de pé.*
+- [x] `[código]` `[seg]` **`error_message` cru devolvido ao usuário**
+      FEITO 2026-08-05 (antecipado: o gatilho era o Sentry, mas o conserto é uma
+      linha e não depende dele).
+      Era: `str(exc)` de qualquer exceção do pipeline ia pro cliente via
+      `GET /jobs/{id}` — caminhos internos, URLs de predição da Replicate, corpo
+      de erro da API.
+      Correção: `app/workers/enhance.py:55` grava a frase fixa
+      `"The enhancement failed."`, e o `logger.exception` logo acima é quem
+      guarda tudo (traceback inteiro no journalctl). Quando o Sentry entrar, ele
+      lê o mesmo log — nada a refazer aqui.
 
 - [x] `[seg]` **Cabeçalhos de segurança** — FEITO 2026-08-05 no `deploy/Caddyfile`,
       junto com o Caddy, como previsto. Você serve imagem de usuário na mesma
@@ -367,10 +464,60 @@ Cada um destes tem um gatilho. Enquanto o gatilho não vier, dá pra viver sem.
 - [ ] `[código]` `[seg]` **Sem cota de armazenamento por conta**
       20 uploads/min × 25 MB = ~30 GB/hora de R2 por conta grátis. Isso é dinheiro
       seu, não invasão. *Gatilho: primeira fatura do R2 fora do esperado.*
+      **Encolheu, não fechou, em 2026-08-18:** o gate de upload exige endereço
+      confirmado e saldo que cubra a imagem, então quem faz isso precisa de uma
+      caixa de entrada real e de crédito no saldo. Mas upload **não debita** —
+      com 8 créditos de bônus e nenhum job, os mesmos 30 GB/hora continuam
+      possíveis. O que mudou é o custo do ataque, não o teto.
 
 - [ ] `[código]` `[seg]` **Enumeração no cadastro** — `409 "email already
-      registered"` contradiz o cuidado do login e do forgot. Some sozinho quando
-      a verificação de email entrar (resposta vira sempre "enviamos um email").
+      registered"` (`app/auth/router.py:66`) contradiz o cuidado do login e do
+      forgot. **A previsão desta linha estava errada:** a verificação de email
+      entrou em 2026-08-05 e o 409 CONTINUA lá, porque o cadastro loga a pessoa
+      na hora (decisão de funil, ver o item da verificação) — não dá pra
+      responder "enviamos um email" e devolver uma sessão ao mesmo tempo.
+      Fechar de verdade custa mudar o fluxo: cadastro deixa de logar e passa a
+      responder sempre igual, com a sessão nascendo só no `/verify`. É pagar
+      funil por privacidade de endereço. *Gatilho: alguém reclamar, ou o dia em
+      que o cadastro deixar de logar por outro motivo.*
+
+### Fechados sem estar na lista (2026-08-05)
+
+Achados ao fechar os itens acima. Ficam registrados porque a lista é a memória
+do projeto — item que não está escrito volta a ser "descoberto" daqui a um mês.
+
+- [x] `[seg]` **Segredos no `repr` do `Settings`** — `replicate_api_token`,
+      `paddle_api_key`, `paddle_webhook_secret`, `resend_api_key`,
+      `r2_secret_access_key` e `database_url` (que carrega a senha do Neon)
+      viraram `SecretStr`. O `repr` de um objeto de settings aparece onde
+      ninguém planeja — diff de assert do pytest, exceção renderizada por
+      framework, print de debug — e levava o token vivo junto. Desembrulha com
+      `.get_secret_value()` no ponto de uso; f-string **não** desembrulha, ela
+      mascara, então chamada esquecida falha alto em vez de vazar.
+      `paddle_client_token` ficou de fora de propósito: ele é entregue ao
+      navegador por `/billing/plans`, é pra isso que serve.
+      `validate_assignment=True` no `model_config` porque testes atribuem string
+      crua e o erro apareceria longe da atribuição.
+- [x] `[seg]` **Download inteiro na RAM** — as três rotas de `/download` liam o
+      arquivo todo antes de responder. Um PNG melhorado no `max_image_px` tem
+      dezenas de MB, e a caixa está dimensionada pro pico de UM job, não pra
+      downloads simultâneos. Agora `storage.stream()` (256 KB por bloco) nos dois
+      backends, com `StreamingResponse`. Detalhe que custa um bug se for copiado
+      errado: o arquivo é aberto **fora** do gerador — corpo de gerador só roda
+      no primeiro chunk puxado, quando a resposta já começou e um arquivo
+      faltando não pode mais virar 404. O `get_object` do S3 já resolve na hora,
+      mesmo contrato. Testes: `tests/test_storage.py` (7).
+- [x] `[seg]` **Upload malformado virava 500** — `image.verify()` só tinha
+      `UnidentifiedImageError` no `except`. PNG truncado levanta `OSError` puro,
+      e header quebrado sai como `ValueError`/`SyntaxError`: todos eram 500 numa
+      requisição que qualquer um faz de graça. Agora os quatro dão 415, e
+      `DecompressionBombError` (um PNG de 227 KB pode declarar 20000×12000, e o
+      PIL recusa antes de decodificar) dá **413** — a mesma resposta do
+      `max_image_px`, que é onde ele ia falhar de qualquer jeito.
+- [x] `[seg]` **Tetos de fila** — descrito no item do threadpool acima
+      (`max_queued_jobs`, `max_queued_jobs_per_user`). Repetido aqui só porque
+      não é consequência do bug do threadpool: sem eles, nada limitava quantos
+      jobs uma conta podia empilhar.
 
 ## Antes de divulgar publicamente
 
@@ -463,12 +610,16 @@ Nada aberto aqui desde 2026-08-01 — o único item da seção está feito.
       continua sendo o `expire_subscription`.
       Teste: `test_transaction_without_a_subscription_keeps_the_link`.
 
-- [ ] `[seg]` **`LocalStorage._path` aceita caminho absoluto e `../`**
-      `app/services/storage.py:24-27`: `return p if p.exists() else self.base / key`.
-      Chave apontando pra fora do base é lida — e o `delete()` usa o mesmo caminho.
-      **Não é explorável hoje:** auditei todos os pontos de geração de chave e são
-      todos do servidor (uuid4 em `images.py:53`, `job.id` em `exporter.py`). Em
-      produção você usa S3Storage, que nem tem esse código. É mina terrestre.
+- [x] `[seg]` **`LocalStorage._path` aceita caminho absoluto e `../`**
+      FEITO 2026-08-05. Era: `return p if p.exists() else self.base / key` — uma
+      chave apontando pra fora do base era lida, e o `delete()` usava o mesmo
+      caminho. Não era explorável (toda chave é gerada pelo servidor: uuid4 em
+      `images.py`, `job.id` em `exporter.py`), era mina terrestre.
+      Correção: chave absoluta e `../` que escapa do base levantam
+      `FileNotFoundError` (`resolve()` + `is_relative_to`), e o prefixo legado
+      `storage/` passou a ser removido explicitamente em vez de depender de
+      "existe no disco?". O `put()` também usa `_path` agora — antes só o `get`
+      normalizava, então gravação e leitura podiam divergir.
 
 - [ ] `[seg]` **CSRF depende inteiramente de `SameSite=Lax`** — está correto hoje
       (nenhum endpoint que muda estado é GET), mas é ponto único: trocar pra

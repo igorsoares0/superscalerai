@@ -33,17 +33,35 @@
       <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 font-display text-xl font-bold text-accent">S</div>
       <h1 id="title" class="font-display text-2xl font-bold tracking-tight">Confirming your email…</h1>
       <p id="detail" class="mt-2 text-sm text-mute"></p>
-      <p class="mt-8">
+      <p class="mt-8 flex flex-col items-center gap-3">
         <a id="cta" href="/login" class="hidden rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85">Go to sign in</a>
+        <button id="resend" class="hidden rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent/85">Resend the email</button>
+        <a id="signout" href="#" class="hidden text-xs text-mute underline underline-offset-2 hover:text-body">Use a different account</a>
       </p>
     </div>
   </main>
 
   <script>
+    /* Two jobs on one page: spend the token from the confirmation email, and
+       hold a signed-in-but-unconfirmed account that app.js bounced here
+       because uploading and paying both need a confirmed address. Which one
+       runs depends on the ?token= being there. */
     const token = new URLSearchParams(location.search).get("token");
     const title = document.getElementById("title");
     const detail = document.getElementById("detail");
     const cta = document.getElementById("cta");
+    const resend = document.getElementById("resend");
+    const signout = document.getElementById("signout");
+    const BONUS = {{ signup_bonus_credits }};
+
+    async function currentUser() {
+      try {
+        const r = await fetch("/auth/me");
+        return r.ok ? await r.json() : null;
+      } catch {
+        return null;
+      }
+    }
 
     function fail(msg) {
       title.textContent = "That link didn't work";
@@ -51,9 +69,46 @@
       cta.classList.remove("hidden");
     }
 
+    /* Signed in, nothing confirmed yet: this is the whole app until they
+       click the link, so it has to offer the way out (a fresh email) and the
+       way around (a different account) rather than just explain. */
+    function waitingRoom(me) {
+      title.textContent = "Confirm your email";
+      detail.textContent =
+        `We sent a link to ${me.email}. Click it to open your workspace and ` +
+        `collect your ${BONUS} free credits — uploads and plans unlock with it.`;
+      resend.classList.remove("hidden");
+      signout.classList.remove("hidden");
+    }
+
+    resend.addEventListener("click", async () => {
+      resend.disabled = true;
+      const r = await fetch("/auth/resend-verification", { method: "POST" });
+      resend.textContent = r.ok
+        ? "Sent — check your inbox"
+        : r.status === 429
+          ? "Too many requests, try later"
+          : "Couldn't send, try again";
+      if (!r.ok && r.status !== 429) resend.disabled = false;
+    });
+
+    signout.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await fetch("/auth/logout", { method: "POST" });
+      location.href = "/login";
+    });
+
     (async () => {
       if (!token) {
-        return fail("The link is incomplete. Open it again from the email, or sign in and ask for a new one.");
+        const me = await currentUser();
+        if (me === null) {
+          return fail("The link is incomplete. Open it again from the email, or sign in and ask for a new one.");
+        }
+        if (me.email_verified) {
+          location.href = "/"; // already done, nothing to wait for
+          return;
+        }
+        return waitingRoom(me);
       }
       let r;
       try {
@@ -69,6 +124,17 @@
         // /auth/verify signs you in too, so the workspace is reachable from
         // whichever browser opened the mail
         location.href = "/";
+        return;
+      }
+      const me = await currentUser();
+      if (r.status === 400 && me && !me.email_verified) {
+        // signed in already: don't send them to a sign-in page they're past —
+        // the fix is one click, right here
+        title.textContent = "That link didn't work";
+        detail.textContent =
+          `It's invalid, already used, or expired. We can send ${me.email} a fresh one.`;
+        resend.classList.remove("hidden");
+        signout.classList.remove("hidden");
         return;
       }
       fail(r.status === 400

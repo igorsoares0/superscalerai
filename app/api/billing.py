@@ -20,11 +20,21 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 logger = logging.getLogger(__name__)
 
 
+def _verified(user: User) -> bool:
+    """Uploading needs a confirmed address (2026-08-18), so paying without one
+    ends with a charged card and an account that can't run a single job. The
+    checkout overlay is opened by Paddle.js in the browser, which means there
+    is no server call to refuse it at — withholding the client token IS the
+    enforcement, because the token is what lets Paddle.Initialize run."""
+    return user.email_verified_at is not None
+
+
 @router.get("/plans")
 def list_plans(user: User = Depends(get_current_user)) -> dict:
     return {
         "environment": settings.paddle_environment,
-        "client_token": settings.paddle_client_token,
+        "email_verified": _verified(user),
+        "client_token": settings.paddle_client_token if _verified(user) else "",
         "plans": [
             {
                 "price_id": p.price_id,
@@ -57,6 +67,8 @@ def change_plan(
     checkout — that would create a second subscription at Paddle. Upgrades
     charge the prorated difference now (webhook resets credits within
     seconds); downgrades start at the next renewal."""
+    if not _verified(user):
+        raise HTTPException(403, "confirm your email address before changing plans")
     target = next((p for p in billing.PLANS if p.slug == body.plan), None)
     if target is None:
         raise HTTPException(400, "unknown plan")

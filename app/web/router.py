@@ -69,11 +69,18 @@ def reset(request: Request):
 
 @router.get("/verify", response_class=HTMLResponse)
 def verify(request: Request):
-    """Landing page for the confirmation email link (?token=...). Renders
-    standalone rather than from base.html: the link is routinely opened in a
-    browser with no session, and base.html's app.js would bounce it to
-    /login before the token was ever spent."""
-    return templates.TemplateResponse(request, "verify.html", {"page": "verify"})
+    """Landing page for the confirmation email link (?token=...), and the
+    holding page for a signed-in account that hasn't confirmed yet — app.js
+    sends those here instead of rendering a workspace they can't use.
+
+    Renders standalone rather than from base.html: the link is routinely
+    opened in a browser with no session, and base.html's app.js would bounce
+    it to /login before the token was ever spent."""
+    return templates.TemplateResponse(
+        request,
+        "verify.html",
+        {"page": "verify", "signup_bonus_credits": settings.signup_bonus_credits},
+    )
 
 
 # Bump when the wording of any of the three pages changes: it is what a

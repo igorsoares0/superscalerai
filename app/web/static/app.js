@@ -18,35 +18,20 @@ async function refreshCredits() {
 
 async function initShell() {
   const me = await (await api("/auth/me")).json();
+  // Uploading and paying both need a confirmed address, so an unconfirmed
+  // account has nothing to do here — /verify is the holding page. This is
+  // presentation only: the API refuses the same calls on its own (see
+  // app/api/images.py and app/api/billing.py), because a redirect is a
+  // suggestion to a browser and nothing at all to curl.
+  if (!me.email_verified) {
+    location.href = "/verify";
+    throw new Error("email not confirmed");
+  }
   document.getElementById("topbar-email").textContent = me.email;
   document.getElementById("credits-badge").textContent = me.credits;
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST" });
     location.href = "/login";
-  });
-  if (!me.email_verified) showVerifyBanner(me.email);
-}
-
-/* The account is usable unconfirmed — only the free credits are waiting — so
-   this is a banner and not a wall. */
-function showVerifyBanner(email) {
-  const banner = document.getElementById("verify-banner");
-  if (!banner) return;
-  const resend = document.getElementById("verify-resend");
-  document.getElementById("verify-text").textContent =
-    `Confirm your email to collect your free credits. We sent a link to ${email}.`;
-  banner.classList.remove("hidden");
-  banner.classList.add("flex");
-
-  resend.addEventListener("click", async () => {
-    resend.disabled = true;
-    const r = await api("/auth/resend-verification", { method: "POST" });
-    resend.textContent = r.ok
-      ? "Sent — check your inbox"
-      : r.status === 429
-        ? "Too many requests, try later"
-        : "Couldn't send, try again";
-    if (!r.ok && r.status !== 429) resend.disabled = false;
   });
 }
 

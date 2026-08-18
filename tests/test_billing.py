@@ -129,6 +129,46 @@ def test_plans_listed(client):
     }
 
 
+# ---- an unconfirmed address can't start paying ----
+
+
+def test_unconfirmed_account_gets_no_paddle_client_token(unverified_client):
+    """The overlay is opened by Paddle.js in the browser, so there is no
+    server call to refuse — without the token Paddle.Initialize can't run,
+    which makes withholding it the actual enforcement."""
+    body = unverified_client.get("/billing/plans").json()
+    assert body["email_verified"] is False
+    assert body["client_token"] == ""
+
+
+def test_confirmed_account_gets_the_client_token(client):
+    body = client.get("/billing/plans").json()
+    assert body["email_verified"] is True
+    assert body["client_token"] == settings.paddle_client_token
+
+
+def test_unconfirmed_account_cannot_change_plans(unverified_client):
+    r = unverified_client.post("/billing/change", json={"plan": "pro"})
+    assert r.status_code == 403
+    assert "confirm your email" in r.json()["detail"]
+
+
+def test_unconfirmed_account_can_still_cancel(unverified_client, monkeypatch):
+    """Never trap someone in a subscription: whoever already pays must be able
+    to stop the charges whatever their address says. Nobody new reaches this
+    state, but a row from before the gate can."""
+    monkeypatch.setattr(billing, "cancel_subscription", lambda sub: "2026-08-14T00:00:00Z")
+    with SessionLocal() as db:
+        user = db.get(User, user_id_of(unverified_client))
+        user.paddle_subscription_id = f"sub_{uuid.uuid4().hex[:26]}"
+        user.plan = "basic"
+        db.commit()
+
+    r = unverified_client.post("/billing/cancel")
+    assert r.status_code == 200
+    assert r.json()["cancels_at"].startswith("2026-08-14")
+
+
 # ---- webhook signature ----
 
 

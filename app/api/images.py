@@ -12,7 +12,7 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.database.models import CreditLedger, ImageRecord, Job, User
 from app.database.session import get_db
-from app.services import storage
+from app.services import credits, storage
 
 router = APIRouter(prefix="/images", tags=["images"])
 logger = logging.getLogger(__name__)
@@ -46,6 +46,14 @@ async def upload_image(
         settings.upload_rate_limit,
         settings.upload_rate_window_minutes,
     )
+    # An upload that can never become a job is pure storage cost, so the two
+    # conditions that make it impossible are checked BEFORE reading the body:
+    # nothing is spooled, nothing is stored, and the user hears the real
+    # reason instead of hitting a 402 one screen later.
+    if user.email_verified_at is None:
+        raise HTTPException(403, "confirm your email address before uploading")
+    if user.credits <= 0:
+        raise HTTPException(402, "you're out of credits — top up to upload again")
     data = await _read_within_limit(file, settings.max_upload_mb * 1024 * 1024)
     try:
         image = Image.open(io.BytesIO(data))
@@ -73,6 +81,17 @@ async def upload_image(
             413,
             f"image is {width}×{height}px; the longest side must be "
             f"at most {settings.max_image_px}px",
+        )
+
+    # Jobs always run at 2x, so the cost of THIS image is already decided —
+    # storing one the balance can't upscale wastes the same bytes as the
+    # zero-credit case above, just less obviously.
+    cost = credits.job_cost(width, height)
+    if user.credits < cost:
+        raise HTTPException(
+            402,
+            f"upscaling this image costs {cost} credits and you have "
+            f"{user.credits} — top up, or upload a smaller image",
         )
 
     ext = image.format.lower()

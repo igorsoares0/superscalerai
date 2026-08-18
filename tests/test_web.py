@@ -18,6 +18,26 @@ def test_static_js_served(anon_client):
     assert anon_client.get("/static/app.js").status_code == 200
 
 
+def test_verify_page_carries_the_bonus_from_config(anon_client, monkeypatch):
+    """The waiting room names the number in a Jinja expression inside a
+    <script>. Nothing else would notice it breaking: the page still renders,
+    the JS just dies at the syntax error and the user stares at 'Confirming
+    your email…' forever."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "signup_bonus_credits", 11)
+    html = anon_client.get("/verify").text
+    assert "const BONUS = 11;" in html
+
+
+def test_the_shell_sends_unconfirmed_accounts_to_the_waiting_room(anon_client):
+    """The dashboard wall is one line in app.js; it is the only thing between
+    an unconfirmed account and a workspace whose every button 403s."""
+    js = anon_client.get("/static/app.js").text
+    assert 'location.href = "/verify"' in js
+    assert "verify-banner" not in anon_client.get("/").text
+
+
 LEGAL_PAGES = ("/terms", "/privacy", "/refunds")
 
 

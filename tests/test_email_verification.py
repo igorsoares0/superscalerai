@@ -169,15 +169,17 @@ def test_resend_on_a_confirmed_account_is_a_no_op(client, sent_emails):
 # ---- what an unconfirmed account can still do ----
 
 
-def test_unconfirmed_account_works_but_cannot_afford_a_job(unverified_client):
-    """Deliberately a soft gate: nothing is walled off, there is simply no
-    free balance. A customer who pays is never blocked by a pending email."""
+def test_unconfirmed_account_can_sign_in_but_not_upload(unverified_client):
+    """The gate hardened on 2026-08-18: it used to be soft (upload freely,
+    fail at the job for lack of credits), which meant an address nobody
+    confirmed could fill the bucket with files no job would ever read.
+    Signing in and looking around still works — see
+    tests/test_upload_gating.py for the upload side."""
     from tests.conftest import png_bytes
 
     c = unverified_client
     assert c.get("/auth/me").status_code == 200
-    r = c.post("/images/upload", files={"file": ("t.png", png_bytes(), "image/png")})
-    assert r.status_code == 201  # uploading is free and still works
+    assert c.get("/images").json() == []
 
-    r = c.post("/jobs", json={"image_id": r.json()["id"], "preset": "portrait"})
-    assert r.status_code == 402  # no credits, because no confirmation
+    r = c.post("/images/upload", files={"file": ("t.png", png_bytes(), "image/png")})
+    assert r.status_code == 403
